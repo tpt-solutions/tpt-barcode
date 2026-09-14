@@ -1,0 +1,34 @@
+[package]
+name        = "tpt-barcode-render"
+description = "Barcode output renderers: SVG, PNG (via image crate), and ANSI terminal"
+version.workspace     = true
+edition.workspace     = true
+rust-version.workspace = true
+authors.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+homepage.workspace    = true
+keywords.workspace    = true
+categories.workspace  = true
+
+[features]
+default = ["std"]
+std     = [
+    "alloc",
+    "tpt-barcode-core/std",
+    "tpt-barcode-1d/std",
+    "tpt-barcode-2d/std",
+]
+alloc   = [
+    "tpt-barcode-core/alloc",
+    "tpt-barcode-1d/alloc",
+    "tpt-barcode-2d/alloc",
+]
+# PNG output via the `image` crate
+png     = ["dep:image", "std"]
+
+[dependencies]
+tpt-barcode-core = { workspace = true }
+tpt-barcode-1d   = { workspace = true }
+tpt-barcode-2d   = { workspace = true }
+image            = { workspace = true, optional = true }

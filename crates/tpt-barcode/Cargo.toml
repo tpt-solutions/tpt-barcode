@@ -1,0 +1,52 @@
+[package]
+name        = "tpt-barcode"
+description = "Zero-allocation barcode generation and scanning — QR, DataMatrix, PDF417, Code 128, EAN-13, UPC-A, Code 39. no_std compatible. Perspective-corrected scanning via tpt-math."
+version.workspace     = true
+edition.workspace     = true
+rust-version.workspace = true
+authors.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+homepage.workspace    = true
+keywords.workspace    = true
+categories.workspace  = true
+
+[features]
+default = ["std", "1d", "2d", "scan", "render"]
+std     = [
+    "alloc",
+    "tpt-barcode-core/std",
+    "tpt-barcode-1d?/std",
+    "tpt-barcode-2d?/std",
+    "tpt-barcode-image?/std",
+    "tpt-barcode-render?/std",
+]
+alloc   = [
+    "tpt-barcode-core/alloc",
+    "tpt-barcode-1d?/alloc",
+    "tpt-barcode-2d?/alloc",
+    "tpt-barcode-image?/alloc",
+    "tpt-barcode-render?/alloc",
+]
+# Opt-in symbology groups
+"1d"    = ["dep:tpt-barcode-1d"]
+"2d"    = ["dep:tpt-barcode-2d"]
+# Image scanning pipeline
+scan    = ["dep:tpt-barcode-image", "dep:tpt-barcode-2d", "dep:tpt-math-geometry", "alloc"]
+# Output renderers
+render  = ["dep:tpt-barcode-render"]
+# Sub-features
+simd    = ["tpt-barcode-image?/simd"]
+png     = ["tpt-barcode-render?/png"]
+
+[dependencies]
+tpt-barcode-core      = { workspace = true }
+tpt-barcode-1d        = { workspace = true, optional = true }
+tpt-barcode-2d        = { workspace = true, optional = true }
+tpt-barcode-image     = { workspace = true, optional = true }
+tpt-barcode-render    = { workspace = true, optional = true }
+tpt-math-geometry     = { workspace = true, optional = true }
+
+[dev-dependencies]
+image = { workspace = true, features = ["png"] }
+tpt-barcode-render = { workspace = true, features = ["png"] }

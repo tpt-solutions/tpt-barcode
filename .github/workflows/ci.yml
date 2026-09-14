@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace --all-features
+
+  msrv:
+    name: MSRV (1.84)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.84
+      - run: cargo build --workspace
+
+  no_std:
+    name: no_std check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+      - name: tpt-barcode-core (no_std + alloc)
+        run: cargo build --target thumbv7em-none-eabihf --no-default-features --features alloc -p tpt-barcode-core
+      - name: tpt-barcode-1d (no_std + alloc)
+        run: cargo build --target thumbv7em-none-eabihf --no-default-features --features alloc -p tpt-barcode-1d
+      - name: tpt-barcode-2d (no_std + alloc)
+        run: cargo build --target thumbv7em-none-eabihf --no-default-features --features alloc -p tpt-barcode-2d

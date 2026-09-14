@@ -1,0 +1,20 @@
+[package]
+name        = "tpt-barcode-1d"
+description = "1D barcode symbologies: Code 128, EAN-13, UPC-A, Code 39 — no_std compatible"
+version.workspace     = true
+edition.workspace     = true
+rust-version.workspace = true
+authors.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+homepage.workspace    = true
+keywords.workspace    = true
+categories.workspace  = true
+
+[features]
+default = ["std"]
+std     = ["alloc", "tpt-barcode-core/std"]
+alloc   = ["tpt-barcode-core/alloc"]
+
+[dependencies]
+tpt-barcode-core = { workspace = true }

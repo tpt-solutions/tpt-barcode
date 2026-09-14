@@ -1,0 +1,31 @@
+[package]
+name        = "tpt-barcode-2d"
+description = "2D barcode symbologies: QR Code, DataMatrix, PDF417 — no_std compatible, zero-allocation homography via tpt-math"
+version.workspace     = true
+edition.workspace     = true
+rust-version.workspace = true
+authors.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+homepage.workspace    = true
+keywords.workspace    = true
+categories.workspace  = true
+
+[features]
+default = ["std"]
+std     = [
+    "alloc",
+    "tpt-barcode-core/std",
+    "tpt-math-geometry/std",
+    "tpt-math-linalg-fixed/std",
+]
+alloc   = [
+    "tpt-barcode-core/alloc",
+    "tpt-math-geometry/alloc",
+    "tpt-math-linalg-fixed/alloc",
+]
+
+[dependencies]
+tpt-barcode-core      = { workspace = true }
+tpt-math-geometry     = { workspace = true }
+tpt-math-linalg-fixed = { workspace = true }

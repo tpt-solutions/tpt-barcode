@@ -1,0 +1,20 @@
+[package]
+name        = "tpt-barcode-core"
+description = "Core barcode traits, GF(256) arithmetic, and Reed-Solomon error correction — no_std compatible"
+version.workspace     = true
+edition.workspace     = true
+rust-version.workspace = true
+authors.workspace     = true
+license.workspace     = true
+repository.workspace  = true
+homepage.workspace    = true
+keywords.workspace    = true
+categories.workspace  = true
+
+[features]
+default = ["std"]
+std     = ["alloc", "tpt-math-numeric/std"]
+alloc   = ["tpt-math-numeric/alloc"]
+
+[dependencies]
+tpt-math-numeric = { workspace = true }

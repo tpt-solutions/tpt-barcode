@@ -1,0 +1,37 @@
+[workspace]
+members = [
+    "crates/tpt-barcode-core",
+    "crates/tpt-barcode-1d",
+    "crates/tpt-barcode-2d",
+    "crates/tpt-barcode-image",
+    "crates/tpt-barcode-render",
+    "crates/tpt-barcode",
+]
+resolver = "2"
+
+[workspace.package]
+version      = "0.1.0"
+edition      = "2021"
+rust-version = "1.84"
+authors      = ["TPT Solutions <phillip@icb.co.nz>"]
+license      = "MIT OR Apache-2.0"
+repository   = "https://github.com/tpt-solutions/tpt-barcode"
+homepage     = "https://github.com/tpt-solutions/tpt-barcode"
+keywords     = ["barcode", "qr-code", "no-std", "embedded", "scanner"]
+categories   = ["encoding", "no-std"]
+
+[workspace.dependencies]
+# Internal crates
+tpt-barcode-core   = { path = "crates/tpt-barcode-core",   version = "0.1.0", default-features = false }
+tpt-barcode-1d     = { path = "crates/tpt-barcode-1d",     version = "0.1.0", default-features = false }
+tpt-barcode-2d     = { path = "crates/tpt-barcode-2d",     version = "0.1.0", default-features = false }
+tpt-barcode-image  = { path = "crates/tpt-barcode-image",  version = "0.1.0", default-features = false }
+tpt-barcode-render = { path = "crates/tpt-barcode-render", version = "0.1.0", default-features = false }
+
+# tpt-math — crates.io primary
+tpt-math-numeric      = { version = "0.1.0", default-features = false }
+tpt-math-linalg-fixed = { version = "0.1.0", default-features = false }
+tpt-math-geometry     = { version = "0.1.1", default-features = false }
+
+# External
+image = { version = "0.25", default-features = false }
