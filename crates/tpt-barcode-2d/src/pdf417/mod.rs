@@ -15,23 +15,32 @@
 mod decode;
 mod encode;
 mod gf929;
+mod numeric;
 mod tables;
+mod text;
+
+#[cfg(feature = "alloc")]
+pub use numeric::{decode_numeric, encode_numeric};
+#[cfg(feature = "alloc")]
+pub use text::{decode_text, encode_text, is_text_encodable as text_encodable};
 
 pub use decode::decode_grid;
 pub use encode::recommended_ec_level;
+pub use text::is_text_encodable;
 
 use tpt_barcode_core::traits::{DecodeError, EncodeError};
 
 /// PDF417 compaction modes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Compaction {
-    /// Binary/byte compaction - encodes arbitrary bytes. **Implemented.**
+    /// Pick the most compact mode per payload (numeric for ≥11 digits, text
+    /// for printable ASCII, byte otherwise).
+    Auto,
+    /// Binary/byte compaction — encodes arbitrary bytes.
     Byte,
-    /// Text compaction - encodes printable ASCII more efficiently. Not
-    /// implemented yet.
+    /// Text compaction — encodes printable ASCII (2 chars per codeword).
     Text,
-    /// Numeric compaction - encodes long digit strings very compactly. Not
-    /// implemented yet.
+    /// Numeric compaction — encodes digit strings (~2.93 digits per codeword).
     Numeric,
 }
 
@@ -58,22 +67,56 @@ pub struct Pdf417 {
     pub height: usize,
 }
 
-/// Encode `data` as a PDF417 barcode using byte compaction.
+/// Encode `data` as a PDF417 barcode.
 ///
-/// Byte compaction encodes arbitrary binary payloads; `ec` must be 0-8 (see
-/// [`recommended_ec_level`] for the ISO-recommended choice).
+/// `ec` must be 0-8 (see [`recommended_ec_level`] for the ISO-recommended
+/// choice). With [`Compaction::Auto`] the most compact mode is chosen:
+/// numeric for ≥11 digits, text for printable ASCII, byte otherwise.
 #[cfg(feature = "alloc")]
 pub fn encode(data: &[u8], ec: EcLevel, compaction: Compaction) -> Result<Pdf417, EncodeError> {
-    match compaction {
-        Compaction::Byte => {}
-        Compaction::Text | Compaction::Numeric => return Err(EncodeError::Unsupported),
-    }
     if data.is_empty() {
         return Err(EncodeError::InvalidCharacter);
     }
 
-    let codewords = encode::encode_codewords(data, ec)?;
-    let m = encode::encode_byte_compaction(data).len();
+    // Auto-select the most compact mode unless explicitly overridden.
+    let compaction = match compaction {
+        c @ (Compaction::Byte | Compaction::Text | Compaction::Numeric) => c,
+        Compaction::Auto => {
+            if data.iter().all(u8::is_ascii_digit) && data.len() >= 11 {
+                Compaction::Numeric
+            } else if text::is_text_encodable(data) {
+                Compaction::Text
+            } else {
+                Compaction::Byte
+            }
+        }
+    };
+
+    // m = source codewords of the chosen mode (drives row/column layout)
+    let (codewords, m) = match compaction {
+        Compaction::Byte => {
+            let cw = encode::encode_codewords_byte(data, ec)?;
+            let m = encode::encode_byte_compaction(data).len();
+            (cw, m)
+        }
+        Compaction::Text => {
+            let cw = encode::encode_codewords_text(data, ec)?;
+            let m = text::encode_text(data)
+                .map_err(|_| EncodeError::InvalidCharacter)?
+                .len();
+            (cw, m)
+        }
+        Compaction::Numeric => {
+            let cw = encode::encode_codewords_numeric(data, ec)?;
+            let m = numeric::encode_numeric(data)
+                .map_err(|_| EncodeError::InvalidCharacter)?
+                .len();
+            (cw, m)
+        }
+        // The shadowed binding above is never Auto; the arm satisfies the
+        // exhaustive match.
+        Compaction::Auto => unreachable!("compaction resolved above"),
+    };
     let k = ec.codeword_count();
     let (cols, rows) = encode::determine_dimensions(m, k).ok_or(EncodeError::DataTooLong)?;
 
@@ -189,11 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_modes() {
-        assert!(matches!(
-            encode(b"PDF", EcLevel(2), Compaction::Text),
-            Err(EncodeError::Unsupported)
-        ));
+    fn rejects_unsupported_modes_and_levels() {
         assert!(matches!(
             encode(b"PDF", EcLevel(9), Compaction::Byte),
             Err(EncodeError::Unsupported)
@@ -202,5 +241,48 @@ mod tests {
             encode(b"", EcLevel(2), Compaction::Byte),
             Err(EncodeError::InvalidCharacter)
         ));
+    }
+
+    #[test]
+    fn text_compaction_round_trip() {
+        for payload in [
+            &b"Hello, PDF417 text compaction!"[..],
+            b"Mixed CASE 123 with punctuation?!",
+            b"tab	newline
+return
+ chars",
+        ] {
+            let symbol = encode(payload, EcLevel(2), Compaction::Text).unwrap();
+            let decoded = decode(&symbol.matrix, symbol.width, symbol.height).unwrap();
+            assert_eq!(decoded, payload);
+        }
+    }
+
+    #[test]
+    fn numeric_compaction_round_trip() {
+        for len in [11usize, 15, 44, 45, 89, 133] {
+            let payload: alloc::vec::Vec<u8> =
+                (0..len).map(|i| b'0' + (i * 7 % 10) as u8).collect();
+            let symbol = encode(&payload, EcLevel(2), Compaction::Numeric).unwrap();
+            let decoded = decode(&symbol.matrix, symbol.width, symbol.height).unwrap();
+            assert_eq!(decoded, payload, "numeric len={len}");
+        }
+    }
+
+    #[test]
+    fn auto_selects_numeric_for_digit_payloads() {
+        // 60 digits: numeric uses ~2.93 digits/codeword vs 1 for byte
+        let payload: alloc::vec::Vec<u8> =
+            (0..60usize).map(|i| b'0' + (i * 7 % 10) as u8).collect();
+        let auto = encode(&payload, EcLevel(2), Compaction::Auto).unwrap();
+        let byte = encode(&payload, EcLevel(2), Compaction::Byte).unwrap();
+        assert!(
+            auto.width * auto.height <= byte.width * byte.height,
+            "numeric should pack at least as tight"
+        );
+        assert_eq!(
+            decode(&auto.matrix, auto.width, auto.height).unwrap(),
+            payload
+        );
     }
 }

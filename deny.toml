@@ -1,0 +1,24 @@
+[graph]
+all-features = true
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
+    "BSD-3-Clause",
+    "Zlib",
+    "CDLA-Permissive-2.0",
+]
+
+[bans]
+multiple-versions = "warn"
+
+[advisories]
+version = 2
+yanked = "warn"
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"

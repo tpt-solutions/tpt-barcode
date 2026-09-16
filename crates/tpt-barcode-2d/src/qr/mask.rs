@@ -163,26 +163,31 @@ fn penalty_rule4(matrix: &[u8], size: usize) -> u32 {
 /// `matrix` must be a flat row-major array of size×size with data already placed
 /// (unmasked). `is_function[i]` is `true` for reserved modules (finders, timing,
 /// format areas), which are never masked but do participate in penalty scoring.
-/// The winning mask is applied in place and returned.
-pub fn select_mask(matrix: &mut [u8], is_function: &[bool], size: usize) -> u8 {
+/// For each candidate the format information of (ec_bits, candidate mask) is
+/// written before scoring, so function modules hold their final values — the
+/// ISO-conformant evaluation. The winning mask (with its format info) is
+/// applied in place and returned.
+pub fn select_mask(matrix: &mut [u8], is_function: &[bool], size: usize, ec_bits: u8) -> u8 {
+    let pristine = matrix.to_vec();
     let mut best_mask = 0u8;
     let mut best_score = u32::MAX;
 
     for mask_id in 0u8..8 {
+        matrix.copy_from_slice(&pristine);
         super::matrix::apply_mask(matrix, is_function, size, mask_id);
+        super::matrix::write_format(matrix, size, ec_bits, mask_id);
 
         let score = penalty(matrix, size);
         if score < best_score {
             best_score = score;
             best_mask = mask_id;
         }
-
-        // Undo the mask
-        super::matrix::apply_mask(matrix, is_function, size, mask_id);
     }
 
-    // Apply the winning mask permanently
+    // Re-apply the winning mask (with its format info) permanently
+    matrix.copy_from_slice(&pristine);
     super::matrix::apply_mask(matrix, is_function, size, best_mask);
+    super::matrix::write_format(matrix, size, ec_bits, best_mask);
 
     best_mask
 }

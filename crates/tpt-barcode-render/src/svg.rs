@@ -133,6 +133,52 @@ pub fn render_1d(modules: &[u8], module_size: u32, height_px: u32) -> String {
     svg
 }
 
+/// Render a rectangular row-major module matrix (`width × height`) to a
+/// self-contained SVG string — the general form of [`SvgBuilder`] for
+/// non-square symbols such as PDF417.
+#[cfg(feature = "alloc")]
+pub fn render_matrix_svg(
+    matrix: &[u8],
+    width: usize,
+    height: usize,
+    module_size: u32,
+    quiet_zone: u32,
+) -> String {
+    let ms = module_size;
+    let qz = quiet_zone * ms;
+    let total_w = width as u32 * ms + 2 * qz;
+    let total_h = height as u32 * ms + 2 * qz;
+
+    let mut svg = alloc::format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {total_w} {total_h}" width="{total_w}" height="{total_h}">"#
+    );
+    svg.push_str(&alloc::format!(
+        r##"<rect width="{total_w}" height="{total_h}" fill="#ffffff"/>"##
+    ));
+    for row in 0..height {
+        // run-length merge dark modules into single wide rects
+        let mut col = 0usize;
+        while col < width {
+            if matrix[row * width + col] != 0 {
+                let start = col;
+                while col < width && matrix[row * width + col] != 0 {
+                    col += 1;
+                }
+                let x = qz + start as u32 * ms;
+                let y = qz + row as u32 * ms;
+                let w = (col - start) as u32 * ms;
+                svg.push_str(&alloc::format!(
+                    r##"<rect x="{x}" y="{y}" width="{w}" height="{ms}" fill="#000000"/>"##
+                ));
+            } else {
+                col += 1;
+            }
+        }
+    }
+    svg.push_str("</svg>");
+    svg
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

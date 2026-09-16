@@ -96,7 +96,7 @@ pub(crate) fn determine_dimensions(m: usize, k: usize) -> Option<(usize, usize)>
 
 /// Encode `data` (byte compaction) at `ec` level into a full codeword stream:
 /// symbol length descriptor, compacted data, pads, then EC codewords.
-pub fn encode_codewords(data: &[u8], ec: EcLevel) -> Result<Vec<u16>, EncodeError> {
+pub fn encode_codewords_byte(data: &[u8], ec: EcLevel) -> Result<Vec<u16>, EncodeError> {
     let level = ec.0;
     if level > 8 {
         return Err(EncodeError::Unsupported);
@@ -228,4 +228,55 @@ mod tests {
         // ISO §4.9.1 example semantics: enough cells, minimal overshoot
         assert_eq!(calculate_rows(5, 8, 3), 5);
     }
+}
+
+/// Encode `data` (text compaction) at `ec` level into a full codeword stream.
+pub fn encode_codewords_text(data: &[u8], ec: EcLevel) -> Result<Vec<u16>, EncodeError> {
+    let level = ec.0;
+    if level > 8 {
+        return Err(EncodeError::Unsupported);
+    }
+    let k = 1usize << (level + 1);
+    let compacted = super::text::encode_text(data).map_err(|_| EncodeError::InvalidCharacter)?;
+    let m = compacted.len();
+    let (c, r) = determine_dimensions(m, k).ok_or(EncodeError::DataTooLong)?;
+    let pads = pad_count(m, k, c, r);
+    let n = m + pads + 1;
+    if n > 928 {
+        return Err(EncodeError::DataTooLong);
+    }
+    let mut codewords = Vec::with_capacity(n + k);
+    codewords.push(n as u16);
+    codewords.extend_from_slice(&compacted);
+    codewords.resize(n, 900);
+    let mut ecw = alloc::vec![0u16; k];
+    rs_encode(&codewords, k, &mut ecw);
+    codewords.extend_from_slice(&ecw);
+    Ok(codewords)
+}
+
+/// Encode `data` (numeric compaction) at `ec` level into a full codeword stream.
+pub fn encode_codewords_numeric(data: &[u8], ec: EcLevel) -> Result<Vec<u16>, EncodeError> {
+    let level = ec.0;
+    if level > 8 {
+        return Err(EncodeError::Unsupported);
+    }
+    let k = 1usize << (level + 1);
+    let compacted =
+        super::numeric::encode_numeric(data).map_err(|_| EncodeError::InvalidCharacter)?;
+    let m = compacted.len();
+    let (c, r) = determine_dimensions(m, k).ok_or(EncodeError::DataTooLong)?;
+    let pads = pad_count(m, k, c, r);
+    let n = m + pads + 1;
+    if n > 928 {
+        return Err(EncodeError::DataTooLong);
+    }
+    let mut codewords = Vec::with_capacity(n + k);
+    codewords.push(n as u16);
+    codewords.extend_from_slice(&compacted);
+    codewords.resize(n, 900);
+    let mut ecw = alloc::vec![0u16; k];
+    rs_encode(&codewords, k, &mut ecw);
+    codewords.extend_from_slice(&ecw);
+    Ok(codewords)
 }

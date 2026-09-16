@@ -119,9 +119,12 @@ fn decode_ascii(codewords: &[u8]) -> Result<Vec<u8>, DecodeError> {
                 }
                 out.push(codewords[i].wrapping_add(127));
             }
-            // 129 = pad, 230+ = C40/Text/X12/Edifact latches — unsupported
-            // encodations terminate the payload here.
-            _ => break,
+            // 129 = PAD (end of padded payload)
+            129 => break,
+            // C40 (230), Base 256 (231), X12 (232), Text (233), EDIFACT (234)
+            // and the macro/reader codewords are not decoded yet.
+            230..=240 => return Err(DecodeError::Unsupported),
+            _ => return Err(DecodeError::InvalidFormat),
         }
         i += 1;
     }

@@ -1,0 +1,37 @@
+[package]
+name = "tpt-barcode-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.tpt-barcode]
+path = "../crates/tpt-barcode"
+default-features = false
+features = ["2d", "alloc"]
+
+[[bin]]
+name = "qr_decode_grid"
+path = "fuzz_targets/qr_decode_grid.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "datamatrix_decode"
+path = "fuzz_targets/datamatrix_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pdf417_decode"
+path = "fuzz_targets/pdf417_decode.rs"
+test = false
+doc = false
+bench = false

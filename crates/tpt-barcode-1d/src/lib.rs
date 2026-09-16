@@ -12,4 +12,5 @@ extern crate alloc;
 pub mod code128;
 pub mod code39;
 pub mod ean13;
+pub mod runs;
 pub mod upca;

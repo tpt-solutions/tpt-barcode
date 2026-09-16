@@ -12,6 +12,9 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[cfg(all(test, feature = "std"))]
+extern crate std;
+
 pub mod datamatrix;
 pub mod pdf417;
 pub mod qr;

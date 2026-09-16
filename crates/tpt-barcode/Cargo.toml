@@ -32,12 +32,13 @@ alloc   = [
 "1d"    = ["dep:tpt-barcode-1d"]
 "2d"    = ["dep:tpt-barcode-2d"]
 # Image scanning pipeline
-scan    = ["dep:tpt-barcode-image", "dep:tpt-barcode-2d", "dep:tpt-math-geometry", "alloc"]
+scan    = ["dep:tpt-barcode-image", "dep:tpt-barcode-2d", "dep:tpt-barcode-1d", "dep:tpt-math-geometry", "alloc"]
 # Output renderers
 render  = ["dep:tpt-barcode-render"]
 # Sub-features
-simd    = ["tpt-barcode-image?/simd"]
-png     = ["tpt-barcode-render?/png"]
+simd         = ["tpt-barcode-image?/simd"]
+png          = ["tpt-barcode-render?/png"]
+image-input  = ["dep:image", "image/png", "scan", "std"]
 
 [dependencies]
 tpt-barcode-core      = { workspace = true }
@@ -46,7 +47,13 @@ tpt-barcode-2d        = { workspace = true, optional = true }
 tpt-barcode-image     = { workspace = true, optional = true }
 tpt-barcode-render    = { workspace = true, optional = true }
 tpt-math-geometry     = { workspace = true, optional = true }
+image                 = { workspace = true, optional = true }
+
+[[bench]]
+name = "pipeline"
+harness = false
 
 [dev-dependencies]
+criterion = "0.7"
 image = { workspace = true, features = ["png"] }
 tpt-barcode-render = { workspace = true, features = ["png"] }

@@ -141,3 +141,132 @@ fn rotated_qr_scans_via_homography() {
     assert_eq!(results.len(), 1, "rotated QR should be found");
     assert_eq!(results[0].text(), payload);
 }
+
+// ── 1D scanning ──────────────────────────────────────────────────────────────
+
+/// Render a 1D module row into a luma buffer (1 px per module, some padding).
+fn render_1d_luma(modules: &[u8], height: usize) -> (Vec<u8>, usize, usize) {
+    let w = modules.len();
+    let mut img = vec![255u8; w * height];
+    for y in 0..height {
+        for (x, &m) in modules.iter().enumerate() {
+            if m != 0 {
+                img[y * w + x] = 0;
+            }
+        }
+    }
+    (img, w, height)
+}
+
+fn runs_from_modules(modules: &[u8]) -> Vec<u32> {
+    let mut runs = Vec::new();
+    let mut count = 0u32;
+    let mut dark = true;
+    for &m in modules {
+        if (m != 0) == dark {
+            count += 1;
+        } else {
+            runs.push(count);
+            count = 1;
+            dark = !dark;
+        }
+    }
+    runs.push(count);
+    runs
+}
+
+#[test]
+fn scan_ean13_from_rendered_bars() {
+    use tpt_barcode::core::Format;
+
+    let encoded =
+        tpt_barcode::one_d::ean13::encode(&[4, 0, 0, 6, 3, 8, 1, 3, 3, 3, 9, 3]).expect("encode");
+    let (pixels, w, h) = render_1d_luma(&encoded.modules, 40);
+
+    let results = tpt_barcode::scan(&pixels, w, h)
+        .formats(&[Format::Ean13])
+        .execute()
+        .unwrap();
+    assert_eq!(results.len(), 1, "expected the EAN-13 to be found");
+    assert_eq!(results[0].format(), Format::Ean13);
+    assert_eq!(results[0].text(), "4006381333931");
+}
+
+#[test]
+fn scan_code128_from_rendered_bars() {
+    use tpt_barcode::core::Format;
+
+    let encoded = tpt_barcode::one_d::code128::encode_b(b"HELLO-128").expect("encode");
+    // `Code128::modules` holds alternating bar/space WIDTHS — expand them to
+    // a binary module row for rendering.
+    let total: usize = encoded.modules.iter().map(|&w| w as usize).sum();
+    let row_modules = tpt_barcode::one_d::runs::runs_to_modules(
+        &encoded
+            .modules
+            .iter()
+            .map(|&w| w as u32)
+            .collect::<Vec<u32>>(),
+        total,
+    )
+    .expect("widths expand to modules");
+    let (pixels, w, h) = render_1d_luma(&row_modules, 30);
+
+    let results = tpt_barcode::scan(&pixels, w, h)
+        .formats(&[Format::Code128])
+        .execute()
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].text(), "HELLO-128");
+}
+
+#[test]
+fn run_length_decode_matches_module_decode() {
+    // runs::decode_* must agree with the module-based decoders
+    let encoded =
+        tpt_barcode::one_d::ean13::encode(&[5, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).expect("encode");
+    let runs = runs_from_modules(&encoded.modules);
+    let via_runs = tpt_barcode::one_d::runs::decode_ean13_runs(&runs).unwrap();
+    assert_eq!(via_runs, encoded.digits);
+}
+
+// ── Multi-symbol + metadata ─────────────────────────────────────────────────
+
+#[test]
+fn scan_reports_qr_metadata() {
+    let qr = tpt_barcode::qr::encode("metadata", tpt_barcode::core::EcLevel::H).unwrap();
+    let (pixels, dim) = render_luma(&qr, 8, 4);
+    let results = scan(&pixels, dim, dim, false);
+    assert_eq!(results.len(), 1);
+    match results[0].metadata() {
+        tpt_barcode::SymbolMetadata::Qr {
+            version,
+            mask,
+            ec_level,
+        } => {
+            assert_eq!(version, qr.version);
+            assert_eq!(mask, qr.mask_id);
+            assert_eq!(ec_level, Some(tpt_barcode::core::EcLevel::H));
+        }
+        other => panic!("expected QR metadata, got {other:?}"),
+    }
+}
+
+#[test]
+fn scan_upca_from_rendered_bars() {
+    use tpt_barcode::core::Format;
+
+    // UPC-A: 11 digits + auto check digit, leading digit must be 0
+    let encoded =
+        tpt_barcode::one_d::upca::encode(&[0, 3, 6, 0, 0, 2, 9, 1, 4, 5, 7]).expect("encode");
+    let (pixels, w, h) = render_1d_luma(&encoded.modules, 40);
+
+    let results = tpt_barcode::scan(&pixels, w, h)
+        .formats(&[Format::UpcA])
+        .execute()
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    // The check digit for 03600029145x is 7 per GS1; the decoder reports the
+    // symbol as encoded (encode computed its own valid check digit).
+    let expected: String = encoded.digits.iter().map(|&d| (d + b'0') as char).collect();
+    assert_eq!(results[0].text(), expected);
+}

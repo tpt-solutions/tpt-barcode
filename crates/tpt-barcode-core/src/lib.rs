@@ -10,6 +10,9 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[cfg(feature = "std")]
+extern crate std;
+
 pub mod gf256;
 pub mod reed_solomon;
 pub mod traits;

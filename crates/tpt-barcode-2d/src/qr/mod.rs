@@ -11,10 +11,11 @@ use alloc::vec::Vec;
 
 use tpt_barcode_core::traits::{EcLevel, EncodeError};
 
-pub use decode::{decode_grid, decode_payload};
+pub use decode::{decode_grid, decode_grid_detailed, decode_payload, DecodedQr};
 
 /// A fully encoded QR Code symbol ready for rendering.
 #[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QrCode {
     /// Flat row-major module data (0 = light, 1 = dark).
     pub matrix: Vec<u8>,
@@ -106,6 +107,140 @@ impl QrCode {
 #[cfg(feature = "alloc")]
 pub fn encode(data: impl AsRef<[u8]>, ec: EcLevel) -> Result<QrCode, EncodeError> {
     QrCode::encode(data.as_ref(), ec)
+}
+
+/// Builder for fine-grained QR Code control: forced version, forced mask,
+/// explicit EC level.
+///
+/// ```rust
+/// use tpt_barcode_2d::qr::QrBuilder;
+/// use tpt_barcode_core::EcLevel;
+///
+/// let qr = QrBuilder::new()
+///     .ec_level(EcLevel::Q)
+///     .version(3)          // pin the symbol size (needed for some print workflows)
+///     .mask(2)             // pin the mask (reproducible output)
+///     .build("force v3")?;
+/// assert_eq!(qr.version, 3);
+/// assert_eq!(qr.mask_id, 2);
+/// # Ok::<(), tpt_barcode_core::EncodeError>(())
+/// ```
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone)]
+pub struct QrBuilder {
+    ec_level: EcLevel,
+    version: Option<u8>,
+    mask: Option<u8>,
+}
+
+#[cfg(feature = "alloc")]
+impl Default for QrBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl QrBuilder {
+    /// Create a builder with EC level M and automatic version/mask selection.
+    pub fn new() -> Self {
+        Self {
+            ec_level: EcLevel::M,
+            version: None,
+            mask: None,
+        }
+    }
+
+    /// Set the error-correction level (default M).
+    pub fn ec_level(mut self, ec: EcLevel) -> Self {
+        self.ec_level = ec;
+        self
+    }
+
+    /// Force a specific version (1–40). The payload must fit.
+    pub fn version(mut self, version: u8) -> Self {
+        self.version = Some(version);
+        self
+    }
+
+    /// Force a mask pattern (0–7).
+    pub fn mask(mut self, mask: u8) -> Self {
+        self.mask = Some(mask);
+        self
+    }
+
+    /// Encode `data` with the configured options.
+    pub fn build(&self, data: impl AsRef<[u8]>) -> Result<QrCode, EncodeError> {
+        let data = data.as_ref();
+        let qr_mode = mode::Mode::detect(data);
+        let version = match self.version {
+            Some(v) => {
+                // The forced version must actually fit the payload
+                let info =
+                    version::version_info(v, self.ec_level).ok_or(EncodeError::Unsupported)?;
+                let used = 4 + qr_mode.char_count_bits(v) as usize + data.len() * 8;
+                if info.data_codewords() * 8 < used {
+                    return Err(EncodeError::DataTooLong);
+                }
+                v
+            }
+            None => version::select_version(data.len(), qr_mode, self.ec_level)
+                .ok_or(EncodeError::DataTooLong)?,
+        };
+        build_qr(data, qr_mode, version, self.ec_level, self.mask)
+    }
+}
+
+/// Core encoding pipeline shared by [`QrCode::encode`], [`encode`] and
+/// [`QrBuilder::build`].
+#[cfg(feature = "alloc")]
+pub(crate) fn build_qr(
+    data: &[u8],
+    qr_mode: mode::Mode,
+    version: u8,
+    ec: EcLevel,
+    mask_hint: Option<u8>,
+) -> Result<QrCode, EncodeError> {
+    use mode::{encode_alphanumeric, encode_byte, encode_numeric, BitBuffer, Mode};
+
+    let info = version::version_info(version, ec).ok_or(EncodeError::Unsupported)?;
+    let capacity_bits = info.data_codewords() * 8;
+
+    // Build bit stream
+    let mut buf = BitBuffer::new();
+    buf.push_bits(qr_mode.indicator() as u32, 4);
+    buf.push_bits(data.len() as u32, qr_mode.char_count_bits(version) as usize);
+    match qr_mode {
+        Mode::Numeric => encode_numeric(data, &mut buf),
+        Mode::Alphanumeric => encode_alphanumeric(data, &mut buf),
+        Mode::Byte | Mode::Kanji => encode_byte(data, &mut buf),
+    }
+    // Terminator (up to 4 zero bits)
+    let remaining = capacity_bits.saturating_sub(buf.len());
+    buf.push_bits(0, remaining.min(4));
+    // Byte-align
+    while buf.len() % 8 != 0 {
+        buf.push_bits(0, 1);
+    }
+    // Padding codewords
+    let mut pad_byte = 0u8;
+    while buf.len() < capacity_bits {
+        buf.push_bits(if pad_byte == 0 { 0xEC } else { 0x11 } as u32, 8);
+        pad_byte ^= 1;
+    }
+
+    let data_bytes = buf.as_bytes();
+    let codewords = ec::interleave_blocks(data_bytes, &info);
+
+    let (matrix, mask_id) = matrix::build(version, &codewords, ec_bits_of(ec), mask_hint);
+
+    Ok(QrCode {
+        size: version::modules(version),
+        matrix,
+        version,
+        ec_level: ec,
+        mask_id,
+    })
 }
 
 #[cfg(all(test, feature = "alloc"))]
@@ -259,6 +394,28 @@ mod tests {
         assert!(mask::penalty(&uniform, 25) > 0);
         assert_eq!(mask::penalty(&checker, 25), 0);
         assert!(mask::penalty_rule1(&uniform, 25) > mask::penalty_rule1(&checker, 25));
+    }
+
+    #[test]
+    fn builder_forces_version_and_mask() {
+        let qr = QrBuilder::new()
+            .ec_level(EcLevel::Q)
+            .version(3)
+            .mask(2)
+            .build("force v3")
+            .unwrap();
+        assert_eq!(qr.version, 3);
+        assert_eq!(qr.mask_id, 2);
+        assert_eq!(qr.decode().unwrap(), b"force v3");
+    }
+
+    #[test]
+    fn builder_rejects_payload_too_big_for_forced_version() {
+        let long = "x".repeat(100);
+        assert!(matches!(
+            QrBuilder::new().version(1).build(&long),
+            Err(EncodeError::DataTooLong)
+        ));
     }
 
     #[test]

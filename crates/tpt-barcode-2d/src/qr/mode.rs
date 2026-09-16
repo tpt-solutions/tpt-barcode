@@ -10,6 +10,9 @@ pub enum Mode {
     /// 8-bit binary / UTF-8. One byte per character.
     Byte,
     /// Kanji (Shift JIS). 13 bits per character.
+    ///
+    /// Never returned by [`Mode::detect`]; encoding currently falls back to
+    /// byte mode, so this variant is reserved for future Shift-JIS support.
     Kanji,
 }
 

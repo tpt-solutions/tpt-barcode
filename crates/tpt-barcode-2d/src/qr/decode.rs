@@ -16,18 +16,30 @@ use super::matrix::{for_each_data_position, format_bits, function_patterns, FORM
 use super::mode::{char_count_bits_of, ALPHANUMERIC_CHARSET};
 use super::version::version_info;
 
-/// Decode a QR Code from a sampled module grid.
+/// A decoded QR Code plus its structural metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedQr {
+    /// Decoded payload bytes.
+    pub payload: Vec<u8>,
+    /// QR version (1–40).
+    pub version: u8,
+    /// Mask pattern id (0–7) from the format information.
+    pub mask: u8,
+    /// Error-correction level from the format information.
+    pub ec_level: Option<EcLevel>,
+}
+
+/// Decode a QR Code from a sampled module grid, returning payload + metadata.
 ///
 /// `grid` is a flat row-major size×size array of 0 (light) / 1 (dark) modules.
-/// Returns the decoded payload bytes.
-pub fn decode_grid(grid: &[u8], size: usize) -> Result<Vec<u8>, DecodeError> {
+pub fn decode_grid_detailed(grid: &[u8], size: usize) -> Result<DecodedQr, DecodeError> {
     if size < 21 || grid.len() != size * size || (size - 21) % 4 != 0 {
         return Err(DecodeError::InvalidFormat);
     }
     let version = ((size - 21) / 4 + 1) as u8;
 
-    let (_ec_bits, mask_id) = read_format(grid, size).ok_or(DecodeError::InvalidFormat)?;
-    let ec_level = ec_from_bits(_ec_bits);
+    let (ec_bits, mask_id) = read_format(grid, size).ok_or(DecodeError::InvalidFormat)?;
+    let ec_level = ec_from_bits(ec_bits);
     let info = version_info(version, ec_level).ok_or(DecodeError::InvalidFormat)?;
 
     // Unmask data modules in place on a copy
@@ -56,7 +68,18 @@ pub fn decode_grid(grid: &[u8], size: usize) -> Result<Vec<u8>, DecodeError> {
 
     let data_bytes = deinterleave_and_correct(&codewords, &info)?;
 
-    decode_payload(&data_bytes, version)
+    let payload = decode_payload(&data_bytes, version)?;
+    Ok(DecodedQr {
+        payload,
+        version,
+        mask: mask_id,
+        ec_level: Some(ec_level),
+    })
+}
+
+/// Decode a QR Code from a sampled module grid; returns payload bytes only.
+pub fn decode_grid(grid: &[u8], size: usize) -> Result<Vec<u8>, DecodeError> {
+    decode_grid_detailed(grid, size).map(|d| d.payload)
 }
 
 /// Read and BCH-validate the 15-bit format information.

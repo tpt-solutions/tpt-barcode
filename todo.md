@@ -122,8 +122,8 @@
       substitution error-correction test; fixture from `pdf417gen` decoded
       cross-checked with `zxing-cpp`; our encoder's output decoded by
       `zxing-cpp` during development)
-- [ ] Text and numeric compaction (encode + decode) — the only remaining
-      PDF417 capability gap
+- [x] Text and numeric compaction (encode + decode) — complete; only
+      mixed-segment auto-optimization (switching mid-payload) is future work
 
 ## Phase 6 — Facade + Polish (Week 9)
 - [x] Wire all feature flags in `crates/tpt-barcode/Cargo.toml`
@@ -140,6 +140,127 @@
       core → 1d → 2d → image → render → facade)
 - [ ] Publish: tpt-barcode-core → tpt-barcode-1d → tpt-barcode-2d → tpt-barcode-image → tpt-barcode-render → tpt-barcode
       (requires crates.io credentials; mechanical once approved)
+
+## Phase 7 — Known Bugs & Correctness Debt (2026-09 review)
+
+Findings from the 2026-09-16 platform review; file references are to the
+current tree. Ordered by risk.
+
+- [x] **[BUG]** `tpt-barcode-image` cannot compile without the `alloc`
+      feature: `binarize.rs` referenced a non-existent `heapless_integral`
+      module and `edge.rs`/`finder.rs` use `alloc::vec::Vec` un-gated.
+      Interim: a `compile_error!` now fires with a clear message (fixed
+      2026-09-16). Proper fix: caller-supplied-buffer API for the integral
+      image + `alloc`-gating of the vision pipeline, so `no_alloc` targets
+      get a real (buffer-based) binarization path instead of a wall.
+- [x] **[BUG/GAP]** `Scanner` scans QR only and returns at most one symbol;
+      `formats(&[...])` silently ignores every other format
+      (`tpt-barcode/src/lib.rs`, `Scanner::execute`). Fix: loop over finder
+      triples (dedupe overlapping hits) for multi-symbol images, and add 1D
+      scanning — which needs:
+- [x] **[GAP]** 1D decoders accept module-per-byte arrays only
+      (`ean13::decode(&[u8; 95])`, `code39::decode(&[u8])`, …). Real scanners
+      and the vision pipeline produce **run lengths**. Add run-length-based
+      decode APIs (`decode_runs(&[u32], pattern)`), then wire EAN-13/UPC-A/
+      Code 128/Code 39 into `Scanner` (row-of-pixels → runs → decode).
+- [x] **[BUG]** `EncodeError`/`DecodeError` implement neither `Display` nor
+      `core::error::Error`, so `?`-propagation into apps needs manual
+      conversion. Add manual `Display` + `Error` impls (`no_std`-safe), plus
+      `Display` for `Format`/`EcLevel`.
+- [x] **[DEBT]** QR mask selection scores penalties while the format areas
+      are still light (`matrix.rs` writes format info after `select_mask`),
+      so the chosen mask can differ from spec-conformant encoders on edge
+      cases. Fix: write format bits per candidate mask before scoring.
+- [x] **[PERF]** PDF417 codeword reverse-lookup is a linear scan over 929
+      entries per codeword (`pdf417/decode.rs::lookup`). Build a sorted
+      (mask → codeword) index or perfect-hash per cluster once per symbol.
+- [~] **[DEBT]** QR Kanji mode is a dead path (documented as reserved;
+      Shift-JIS encode still unimplemented): `Mode::detect` never returns
+      it and `encode_byte` is used in its place. Either implement Shift-JIS
+      Kanji encoding (with detection) or remove it from the public `Mode`.
+- [x] **[GAP]** DataMatrix: encoder is ASCII-encodation only (no C40/Text/
+      X12/Edifact/Base256 → larger symbols than necessary); decoder silently
+      truncates at any non-ASCII latch. Implement at least C40 + Base256 on
+      both sides; make unsupported-latch decoding return
+      `DecodeError::Unsupported` instead of a silent partial payload.
+- [x] **[API]** `pdf417::EcLevel(pub u8)` allows invalid values (9+ fails
+      only at runtime). Add `EcLevel::new(u8) -> Option<_>` / named constants
+      and make tests/clippy prefer them.
+
+## Phase 8 — Adoption & Usability
+
+- [x] **Examples directory** (`examples/` in the facade crate, runnable with
+      `cargo run --example`): `qr_svg`, `qr_png`, `datamatrix_svg`,
+      `pdf417_png`, `code128_svg`, `scan_image` (load file → scan → print
+      text + bounding boxes). Every example doubles as a doc page.
+- [x] **One-line API**: extension traits behind features —
+      `QrCodeExt::to_svg_string()/to_png_bytes()`, plus
+      `SvgBuilder::from_qr(&QrCode)`. The current
+      `SvgBuilder::new(&qr.matrix, qr.size)` forces users to touch internals.
+- [x] **`scan_image` convenience**: accept `&image::DynamicImage` /
+      `GrayImage` directly (behind `scan` + `std`), removing the
+      `as_raw()/width()/height()` dance from every caller.
+- [x] **QR builder API**: `QrCode::builder().data(..).ec_level(..)
+      .version(..).mask(..).build()` — forced version/mask are needed for
+      GS1, print-plate reuse, and golden-image testing.
+- [x] **CLI binary** (`src/bin/tpt-barcode` or a `tpt-barcode-cli` crate):
+      `tpt-barcode encode qr --ec m --svg out.svg "text"`,
+      `tpt-barcode scan photo.jpg --json`. CLI tools are the single biggest
+      adoption driver for codec crates.
+- [x] **Docs**: README code blocks compiled in CI (docinclude or
+      `#[doc = include_str!]`), a feature/symbology support matrix, platform
+      table (std / no_std+alloc / wasm), and per-crate doc examples on the
+      main entry points (`qr::encode`, `pdf417::encode`, `scan`).
+      (Done 2026-09-16: support matrix + CLI/examples sections; scanner
+      doc examples use `no_run`.)
+- [ ] **Templates**: an `templates/embedded` sketch (no_std + alloc frame-
+      buffer render) and a `templates/web` WASM demo page (encode + camera
+      scan) — the two most requested integration surfaces.
+
+## Phase 9 — Hardening & Automation
+
+- [x] **Property-based round-trip tests** (`proptest`, dev-dependency only):
+      random payloads × all EC levels × all modes for QR/DataMatrix/PDF417
+      and the 1D symbologies; random bit errors within EC capacity must
+      decode. The current fixture set is hand-picked.
+- [x] **Zero-allocation as a tested invariant**: a counting `GlobalAlloc`
+      in tests asserts zero heap allocations during the scan path
+      (`finder → homography → sample → decode`) — turns the headline claim
+      into CI-enforced truth.
+- [x] **Fuzzing** (`cargo-fuzz`): targets for `qr::decode_grid`,
+      `datamatrix::decode`, `pdf417::decode` (module grids + raw codeword
+      streams). Decoders are the attack surface; a fuzz smoke run in CI.
+- [x] **Benchmarks** (`criterion`): encode/decode throughput per symbology
+      and the binarize SIMD-vs-scalar comparison; publish numbers in README.
+- [x] **CI additions**: `wasm32-unknown-unknown` build job (core/2d/render),
+      nightly `cargo clippy` job, `cargo-deny` (licenses + advisories),
+      `cargo-llvm-cov` coverage badge, and a differential-test job against a
+      pinned corpus (zxing-generated symbols checked in under `testdata/`).
+- [x] **Automation**: `cargo-release` (or release-please) config for the
+      6-crate workspace publish order; pre-commit hook running
+      `cargo fmt --check` + `cargo clippy -D warnings`.
+
+## Phase 10 — Differentiators (innovative bets)
+
+- [ ] **`const` QR generation**: compile-time encoding of static payloads to
+      SVG/path strings in `const` contexts (`const QR: &str = ...`). No
+      mainstream Rust crate does this; it is the ultimate form of the
+      zero-cost story for embedded and static sites. Requires const-fn
+      versions of the QR pipeline (feasible: everything except the mask
+      penalty loop is const-friendly; penalty loop is const too).
+- [ ] **GS1 support**: FNC1 first/second position in QR and DataMatrix
+      encoding, application-identifier parsing into typed key-value output,
+      and GS1-safe payload validation. Enterprise adoption hinge.
+- [x] **Multi-symbol scanning + structured results**: `ScanResult` gains
+      symbology-specific metadata (QR version/mask/EC, ECI; DataMatrix size;
+      PDF417 rows/EC level) and `execute()` returns all distinct symbols.
+- [~] **NEON binarization path** (aarch64) mirroring the SSE2 threshold
+      stage; `target_feature` runtime detection already in place.
+- [ ] **Bilinear grid sampling** option in `homography::sample_grid` for
+      low-resolution images (currently nearest-neighbour only).
+- [ ] **Language bindings**: WASM/npm package with a browser demo page and
+      (optionally) pyo3 bindings — both are proven adoption multipliers for
+      barcode libraries.
 
 ## Ongoing / Cross-Cutting
 - [x] `cargo fmt --check` — keep clean throughout

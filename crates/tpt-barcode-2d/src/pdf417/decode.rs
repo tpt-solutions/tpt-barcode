@@ -1,6 +1,7 @@
 //! PDF417 decoding: row parsing, codeword lookup, row-indicator decoding,
 //! GF(929) error correction, and byte-compaction payload recovery.
 
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use tpt_barcode_core::traits::DecodeError;
@@ -82,7 +83,68 @@ pub fn decode_grid(matrix: &[u8], width: usize, height: usize) -> Result<Vec<u8>
         .iter()
         .rposition(|&cw| cw != 900)
         .map_or(0, |p| p + 1);
-    decode_byte_compaction(&payload[..end])
+    decode_payload_segments(&payload[..end])
+}
+
+/// Dispatch the payload across compaction-mode segments: text (900), byte
+/// (901/924), numeric (902), and the single-byte shift (913).
+fn decode_payload_segments(payload: &[u16]) -> Result<Vec<u8>, DecodeError> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < payload.len() {
+        match payload[i] {
+            super::text::LATCH_TEXT => {
+                i += 1;
+                let start = i;
+                while i < payload.len() && payload[i] < 900 {
+                    i += 1;
+                }
+                out.extend(super::text::decode_text(&payload[start..i])?);
+            }
+            super::numeric::LATCH_NUMERIC => {
+                i += 1;
+                let start = i;
+                // numeric continues until another latch or the end
+                while i < payload.len() && payload[i] < 900 {
+                    i += 1;
+                }
+                out.extend(super::numeric::decode_numeric(&payload[start..i])?);
+            }
+            901 | 924 => {
+                let latch = payload[i];
+                i += 1;
+                let remaining = payload.len() - i;
+                let tail = if latch == 901 {
+                    ((remaining - 1) % 5) + 1
+                } else {
+                    0
+                };
+                let groups = (remaining - tail) / 5;
+                for _ in 0..groups {
+                    let mut t: u64 = 0;
+                    for cw in &payload[i..i + 5] {
+                        t = t * 900 + u64::from(*cw);
+                    }
+                    let mut six = [0u8; 6];
+                    for slot in six.iter_mut().rev() {
+                        *slot = (t & 0xFF) as u8;
+                        t >>= 8;
+                    }
+                    out.extend_from_slice(&six);
+                    i += 5;
+                }
+                for cw in &payload[i..i + tail] {
+                    out.push(*cw as u8);
+                }
+                i += tail;
+            }
+            other => {
+                let _ = other;
+                return Err(DecodeError::Unsupported);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Read `len` modules starting at `x` as an MSB-first bitmask.
@@ -94,12 +156,67 @@ fn slice_mask(row: &[u8], x: usize, len: usize) -> u32 {
     mask
 }
 
+/// Binary search over a `(mask, codeword)` index, sorted by mask.
+struct LookupIndex {
+    masks: [u32; 929],
+    codewords: [u16; 929],
+}
+
+/// Per-cluster reverse-lookup indices, built on first use.
+fn lookup_index(cluster: usize) -> &'static LookupIndex {
+    use core::sync::atomic::{AtomicPtr, Ordering};
+    static INDICES: [AtomicPtr<LookupIndex>; 3] = [
+        AtomicPtr::new(core::ptr::null_mut()),
+        AtomicPtr::new(core::ptr::null_mut()),
+        AtomicPtr::new(core::ptr::null_mut()),
+    ];
+
+    let mut ptr = INDICES[cluster].load(Ordering::Acquire);
+    if ptr.is_null() {
+        let mut index = Box::new(LookupIndex {
+            masks: [0; 929],
+            codewords: [0; 929],
+        });
+        for (cw, &mask) in CODEWORD_TABLE[cluster].iter().enumerate() {
+            index.masks[cw] = mask;
+            index.codewords[cw] = cw as u16;
+        }
+        // Sort (mask, codeword) pairs by mask for binary search
+        let mut order: [u16; 929] = core::array::from_fn(|i| i as u16);
+        order.sort_by_key(|&cw| CODEWORD_TABLE[cluster][cw as usize]);
+        for (slot, &cw) in index.masks.iter_mut().zip(order.iter()) {
+            *slot = CODEWORD_TABLE[cluster][cw as usize];
+        }
+        for (slot, &cw) in index.codewords.iter_mut().zip(order.iter()) {
+            *slot = cw;
+        }
+        let boxed = alloc::boxed::Box::into_raw(index);
+        match INDICES[cluster].compare_exchange(
+            core::ptr::null_mut(),
+            boxed,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => ptr = boxed,
+            Err(existing) => {
+                // Another thread won the race
+                drop(unsafe { alloc::boxed::Box::from_raw(boxed) });
+                ptr = existing;
+            }
+        }
+    }
+    // SAFETY: the pointer is never null past initialization and never freed.
+    unsafe { &*ptr }
+}
+
 /// Reverse-lookup a 17-module pattern within a cluster.
 pub(crate) fn lookup(cluster: usize, mask: u32) -> Result<u16, DecodeError> {
-    CODEWORD_TABLE[cluster]
-        .iter()
-        .position(|&m| m == mask)
-        .map(|p| p as u16)
+    let index = lookup_index(cluster);
+    index
+        .masks
+        .binary_search(&mask)
+        .ok()
+        .map(|p| index.codewords[p])
         .ok_or(DecodeError::InvalidFormat)
 }
 
@@ -155,61 +272,4 @@ fn decode_geometry(codewords: &[u16], cols: usize, rows: usize) -> Result<Geomet
         cols,
         ec_level,
     })
-}
-
-/// Decode a byte-compaction codeword stream (latch already consumed by the
-/// caller's data section): 5-codeword groups → 6 bytes, tail bytes direct.
-/// Encounters of mode latches / PAD terminate the payload.
-fn decode_byte_compaction(codewords: &[u16]) -> Result<Vec<u8>, DecodeError> {
-    let mut out = Vec::new();
-    let mut i = 0usize;
-    let mut latch: Option<u16> = None;
-
-    while i < codewords.len() {
-        let cw = codewords[i];
-        if cw == 901 || cw == 924 {
-            latch = Some(cw);
-            i += 1;
-            continue;
-        }
-        if cw >= 900 {
-            break; // PAD or a mode we do not decode
-        }
-        match latch {
-            None => {
-                // Payload began without a byte latch — invalid for our encoder
-                return Err(DecodeError::InvalidFormat);
-            }
-            Some(mode) => {
-                let remaining = codewords[i..].iter().take_while(|&&c| c < 900).count();
-                // Latch 924 promises whole sixpacks; 901 carries a trailing
-                // partial group of 1..5 bytes — its size falls out of the
-                // codeword count modulo 5.
-                let tail = if mode == 901 {
-                    ((remaining - 1) % 5) + 1
-                } else {
-                    0
-                };
-                let groups = (remaining - tail) / 5;
-                for _ in 0..groups {
-                    let mut t: u64 = 0;
-                    for cw in &codewords[i..i + 5] {
-                        t = t * 900 + *cw as u64;
-                    }
-                    let mut six = [0u8; 6];
-                    for slot in six.iter_mut().rev() {
-                        *slot = (t & 0xFF) as u8;
-                        t >>= 8;
-                    }
-                    out.extend_from_slice(&six);
-                    i += 5;
-                }
-                for cw in &codewords[i..i + tail] {
-                    out.push(*cw as u8);
-                }
-                i += tail;
-            }
-        }
-    }
-    Ok(out)
 }

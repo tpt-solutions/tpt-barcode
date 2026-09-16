@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - QR Code generation for versions 1–40 with automatic version/mode selection
   (numeric, alphanumeric, byte), ISO 18004 zigzag data placement, BCH(15,5)
   format information, and penalty-optimal mask selection.
+- Error traits implement `Display` and `std::error::Error`; `Format`/`EcLevel`
+  implement `Display`.
 - QR Code decoding from module grids: format-info read with BCH validation and
   3-bit-error correction, unmasking, codeword extraction, block
   de-interleaving, Reed-Solomon error correction, and mode-stream parsing
@@ -36,13 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Annex M symbol placement (utah shapes + corner patterns), solid-L finder and
   timing borders, and the matching inverse pipeline. Nine single-block symbol
   sizes from 10×10 to 26×26.
-- PDF417 encoding and decoding via byte compaction (ISO/IEC 15438): the
-  3×929 codeword cluster pattern table, Reed-Solomon over GF(929) (prime-field
-  Berlekamp–Massey / Chien / Forney with odd-characteristic Forney sign),
-  symbol length descriptor and pad rules, row/column layout with row-indicator
-  codewords, start/stop rendering, and the inverse decode path with
-  row-indicator geometry decoding. Text and numeric compaction remain
-  unimplemented.
+- PDF417 encoding and decoding (ISO/IEC 15438): text, byte, and numeric
+  compaction; the 3×929 codeword cluster pattern table; Reed-Solomon over
+  GF(929) (prime-field Berlekamp–Massey / Chien / Forney with the
+  odd-characteristic Forney sign and full σ′ scalar factors); symbol length
+  descriptor and pad rules; row/column layout with row-indicator codewords;
+  start/stop rendering; and the inverse decode path with row-indicator
+  geometry decoding. Auto-compaction picks the densest mode per payload.
 
 #### tpt-barcode-image
 - Bradley adaptive local-mean binarization with an integral image, Otsu global

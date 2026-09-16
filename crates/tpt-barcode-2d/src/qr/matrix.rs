@@ -89,7 +89,7 @@ pub fn build(
         apply_mask(&mut matrix, &is_function, size, m);
         m
     } else {
-        select_mask(&mut matrix, &is_function, size)
+        select_mask(&mut matrix, &is_function, size, ec_bits)
     };
     // ── Write format information ─────────────────────────────────────────────
     write_format(&mut matrix, size, ec_bits, mask_id);

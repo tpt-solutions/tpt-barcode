@@ -251,21 +251,19 @@ fn binarize_simd_sse2(
     }
 }
 
-// Use a heap-allocated integral image when alloc is available,
-// otherwise use a fixed stack array limited to 4096×4096 images.
+// The integral image needs heap allocation. For `no_alloc` targets a
+// caller-supplied-buffer API is the intended design (tracked in todo.md);
+// the combination currently fails to compile rather than silently blowing
+// a 64 MiB stack array.
 #[cfg(feature = "alloc")]
 fn alloc_or_stack_integral(len: usize) -> alloc::vec::Vec<u32> {
     alloc::vec![0u32; len]
 }
 
 #[cfg(not(feature = "alloc"))]
-fn alloc_or_stack_integral(len: usize) -> heapless_integral::Integral {
-    // For truly no_std no_alloc, callers must use the slice-based API and supply their own buffer.
-    // This is a compile-time check: images over 4096×4096 will fail to compile.
-    const MAX: usize = 4097 * 4097;
-    debug_assert!(len <= MAX);
-    [0u32; MAX]
-}
+compile_error!(
+    "tpt-barcode-image requires the `alloc` feature (or `std`).      A caller-supplied-buffer binarization API for `no_alloc` targets is tracked in todo.md."
+);
 
 /// Global threshold via Otsu's method (maximizes between-class variance).
 ///

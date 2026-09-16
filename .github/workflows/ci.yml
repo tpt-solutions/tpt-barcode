@@ -61,3 +61,46 @@ jobs:
         run: cargo build --target thumbv7em-none-eabihf --no-default-features --features alloc -p tpt-barcode-1d
       - name: tpt-barcode-2d (no_std + alloc)
         run: cargo build --target thumbv7em-none-eabihf --no-default-features --features alloc -p tpt-barcode-2d
+      - name: tpt-barcode-image (no_std + alloc)
+        run: cargo build --target thumbv7em-none-eabihf --no-default-features --features alloc -p tpt-barcode-image
+
+  wasm:
+    name: wasm32 build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: core + 2d + render (wasm, no std)
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --features alloc -p tpt-barcode-core -p tpt-barcode-2d -p tpt-barcode-render
+      - name: facade (wasm, scan path)
+        run: cargo build --target wasm32-unknown-unknown -p tpt-barcode --no-default-features --features alloc,2d,scan
+
+  nightly:
+    name: Nightly Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  fuzz-smoke:
+    name: Fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - name: Build fuzz targets (no run)
+        run: cargo fuzz build -O --debug-assertions
+
