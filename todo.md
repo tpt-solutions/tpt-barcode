@@ -297,6 +297,9 @@ current tree. Ordered by risk.
 ## Ongoing / Cross-Cutting
 - [x] `cargo fmt --check` — keep clean throughout
 - [x] `cargo clippy --workspace --all-features -- -D warnings` — zero warnings
-- [ ] CI passes on every push (workflow exists; needs a pushed git remote)
+- [ ] CI passes on every push (pushed to `origin/master` at `f1a21b3` on
+      2026-09-17; `gh` CLI unavailable in this environment to confirm the
+      Actions run went green — check
+      https://github.com/tpt-solutions/tpt-barcode/actions)
 - [x] Keep `rust-version = "1.84"` — test on MSRV in CI
       (note: current toolchain is newer; run `rustup run 1.84 cargo check` in CI)
