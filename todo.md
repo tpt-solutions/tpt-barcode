@@ -215,9 +215,16 @@ current tree. Ordered by risk.
       main entry points (`qr::encode`, `pdf417::encode`, `scan`).
       (Done 2026-09-16: support matrix + CLI/examples sections; scanner
       doc examples use `no_run`.)
-- [~] **Templates**: an `templates/embedded` sketch (no_std + alloc frame-
-      buffer render) exists; the `templates/web` WASM demo page (encode +
-      camera scan) is still open — the two most requested integration surfaces.
+- [~] **Templates**: `templates/embedded` (no_std + alloc frame-buffer
+      render) remains unstarted (an earlier note claimed a sketch existed;
+      it did not, on inspection) — and a `templates/web` WASM demo page
+      (encode + camera scan) — **done 2026-09-17**: `templates/web/`
+      (`index.html` + `main.js`) generates a QR Code and Code 128 barcode
+      as inline SVG from a text input, and scans live camera frames via
+      `getUserMedia` → canvas capture → `tpt-barcode-wasm::scan_rgba`,
+      overlaying the detected bounding box. Built on the new
+      `crates/tpt-barcode-wasm` npm package (see Phase 10 "Language
+      bindings"). `templates/embedded` is the one remaining item here.
 
 ## Phase 9 — Hardening & Automation
 
@@ -244,12 +251,14 @@ current tree. Ordered by risk.
 
 ## Phase 10 — Differentiators (innovative bets)
 
-- [ ] **`const` QR generation**: compile-time encoding of static payloads to
-      SVG/path strings in `const` contexts (`const QR: &str = ...`). No
-      mainstream Rust crate does this; it is the ultimate form of the
-      zero-cost story for embedded and static sites. Requires const-fn
-      versions of the QR pipeline (feasible: everything except the mask
-      penalty loop is const-friendly; penalty loop is const too).
+- [x] **`const` QR generation**: `crates/tpt-barcode-2d/src/qr/const_qr.rs`
+      — `qr_matrix`/`qr_matrix_ec` const-fn-encode a byte-mode payload to a
+      `ConstQr` module matrix (full const-evaluated GF(256)/Reed-Solomon,
+      placement, and mask-penalty search), and `qr_svg`/`qr_svg_ec`/
+      `qr_svg_path` go all the way to a const-evaluated SVG string via a
+      fixed-capacity `ConstStr<N>` buffer (sidesteps the no-heap-in-const-fn
+      limitation instead of requiring `String`). Usable as
+      `const QR: ConstStr<16384> = qr_svg(b"...");`.
 - [x] **GS1 support**: `qr::encode_gs1` (FNC1 first position + byte
       segment) and `datamatrix::encode_gs1` (FNC1 codeword 232 after the
       SLD), plus `two_d::gs1` — a length-aware Application Identifier
@@ -265,9 +274,25 @@ current tree. Ordered by risk.
       pending access to an aarch64 machine.
 - [x] **Bilinear grid sampling** — `homography::sample_grid_bilinear`
       added alongside the nearest-neighbour path.
-- [ ] **Language bindings**: WASM/npm package with a browser demo page and
-      (optionally) pyo3 bindings — both are proven adoption multipliers for
-      barcode libraries.
+- [x] **Language bindings (done 2026-09-17)**: new
+      `crates/tpt-barcode-wasm` crate exposes a `#[wasm_bindgen]` API —
+      `encode_qr_svg`/`encode_qr_png`, `encode_code128_svg`,
+      `scan_gray`/`scan_rgba` (returning `WasmScanResult` with
+      `text`/`format`/`corners`) — over the existing facade, buildable via
+      `wasm-pack build --target web` into a publish-shaped (but
+      unpublished) npm package; see its README for build/usage. It is
+      excluded from the main Cargo workspace (own `[workspace]` table,
+      listed in the root `Cargo.toml` `exclude`) so wasm-bindgen's
+      dependency tree and `cdylib` crate-type don't affect
+      `cargo clippy --workspace --all-features` on the native host — the
+      same treatment as `fuzz`. `templates/web/` (Phase 8) consumes this
+      crate's `wasm-pack` output directly rather than re-implementing
+      bindings. **Python half**: `crates/tpt-barcode-py` (pyo3) exposes
+      `encode_qr_svg`/`encode_qr_png`, `encode_code128_svg`, `scan` (returns
+      `ScanResult` objects with `text`/`format`/`bounding_box`), buildable
+      via `maturin develop`/`maturin build` (not published to PyPI); also
+      excluded from the main Cargo workspace for the same reason as the
+      wasm crate.
 
 ## Ongoing / Cross-Cutting
 - [x] `cargo fmt --check` — keep clean throughout

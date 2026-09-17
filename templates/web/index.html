@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>tpt-barcode WASM demo</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    max-width: 720px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+    line-height: 1.5;
+  }
+  h1 { font-size: 1.4rem; }
+  section {
+    border: 1px solid #8884;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+  input[type="text"], select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.4rem;
+    margin-bottom: 0.75rem;
+  }
+  button {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+  }
+  #qr-output, #code128-output {
+    margin-top: 1rem;
+    background: #fff;
+    display: inline-block;
+    padding: 0.5rem;
+  }
+  #video-wrap { position: relative; max-width: 480px; }
+  video, #overlay {
+    width: 100%;
+    display: block;
+  }
+  #overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+  }
+  #scan-results {
+    margin-top: 0.75rem;
+    font-family: ui-monospace, monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .status { color: #888; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+  <h1>tpt-barcode — WASM demo</h1>
+  <p>
+    Minimal, dependency-free demo of
+    <a href="../../crates/tpt-barcode-wasm">tpt-barcode-wasm</a>: generate a
+    QR Code / Code 128 barcode from text, and scan barcodes live using the
+    device camera. No framework, no bundler — plain ES modules.
+  </p>
+
+  <section>
+    <h2>Generate</h2>
+    <label for="text-input">Text to encode</label>
+    <input id="text-input" type="text" value="https://github.com/tpt-solutions/tpt-barcode" />
+
+    <label for="ec-level">QR error-correction level</label>
+    <select id="ec-level">
+      <option value="L">L (~7%)</option>
+      <option value="M" selected>M (~15%)</option>
+      <option value="Q">Q (~25%)</option>
+      <option value="H">H (~30%)</option>
+    </select>
+
+    <button id="generate-btn">Generate</button>
+    <p id="generate-error" style="color:#c33"></p>
+
+    <div>
+      <h3>QR Code</h3>
+      <div id="qr-output"></div>
+    </div>
+    <div>
+      <h3>Code 128 (printable ASCII only)</h3>
+      <div id="code128-output"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Scan with camera</h2>
+    <p class="status" id="camera-status">Camera not started.</p>
+    <button id="scan-btn">Scan with camera</button>
+    <button id="stop-btn" disabled>Stop</button>
+    <div id="video-wrap" style="margin-top: 0.75rem;">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <canvas id="capture" style="display:none;"></canvas>
+    <div id="scan-results"></div>
+  </section>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

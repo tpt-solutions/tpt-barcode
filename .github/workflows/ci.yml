@@ -76,6 +76,8 @@ jobs:
         run: cargo build --target wasm32-unknown-unknown --no-default-features --features alloc -p tpt-barcode-core -p tpt-barcode-2d -p tpt-barcode-render
       - name: facade (wasm, scan path)
         run: cargo build --target wasm32-unknown-unknown -p tpt-barcode --no-default-features --features alloc,2d,scan
+      - name: tpt-barcode-wasm (npm package crate; standalone, not a workspace member)
+        run: cargo build --manifest-path crates/tpt-barcode-wasm/Cargo.toml --target wasm32-unknown-unknown
 
   nightly:
     name: Nightly Clippy
