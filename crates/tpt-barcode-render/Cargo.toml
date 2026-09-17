@@ -32,4 +32,4 @@ png     = ["dep:image", "std"]
 tpt-barcode-core = { workspace = true }
 tpt-barcode-1d   = { workspace = true }
 tpt-barcode-2d   = { workspace = true }
-image            = { workspace = true, optional = true }
+image            = { workspace = true, optional = true, features = ["png"] }
