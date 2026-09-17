@@ -23,22 +23,16 @@ pub fn encode(digits: &[u8]) -> Result<UpcA, EncodeError> {
         return Err(EncodeError::InvalidCharacter);
     }
 
-    // Prepend a 0 to make EAN-13
-    let mut ean_input = [0u8; 12];
-    ean_input[0] = 0;
-    ean_input[1..1 + digits.len()].copy_from_slice(digits);
-
-    // If only 11 digits provided, leave ean_input[12] as 0 and let ean13 auto-compute
+    // Prepend a 0 to make EAN-13. With 11 digits, the 12th (check digit)
+    // slot is left as 0 and ean13::encode auto-computes it; with 12 digits,
+    // the caller-supplied check digit is passed through as-is.
     let ean_bc = if digits.len() == 11 {
-        ean13::encode(&ean_input[..12])?
+        let mut ean_input = [0u8; 12];
+        ean_input[1..12].copy_from_slice(digits);
+        ean13::encode(&ean_input)?
     } else {
         let mut ean13_digits = [0u8; 13];
-        ean13_digits[..13].copy_from_slice(&{
-            let mut tmp = [0u8; 13];
-            tmp[0] = 0;
-            tmp[1..13].copy_from_slice(digits);
-            tmp
-        });
+        ean13_digits[1..13].copy_from_slice(digits);
         ean13::encode(&ean13_digits)?
     };
 
@@ -73,5 +67,16 @@ mod tests {
         let bc = encode(&digits).unwrap();
         let decoded = decode(&bc.modules).unwrap();
         assert_eq!(&decoded[..11], &digits);
+    }
+
+    #[test]
+    fn encode_12_digit_with_explicit_check_digit() {
+        // Regression: previously panicked with an out-of-bounds slice copy
+        // for any 12-digit input.
+        let digits: [u8; 12] = [0, 3, 6, 0, 0, 0, 2, 9, 1, 4, 5, 2];
+        let bc = encode(&digits).unwrap();
+        assert_eq!(bc.digits, digits);
+        let decoded = decode(&bc.modules).unwrap();
+        assert_eq!(decoded, digits);
     }
 }
