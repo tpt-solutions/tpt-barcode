@@ -1,0 +1,53 @@
+# This crate is deliberately excluded from the root `[workspace]` (see the
+# root Cargo.toml `exclude` list, same treatment as `fuzz/`) and declares its
+# own empty `[workspace]` table here so it builds as a fully standalone
+# package. Two reasons:
+#
+#   1. `pyo3`'s `extension-module` feature disables linking against
+#      `libpython`, which is required for producing a loadable Python
+#      extension but breaks `cargo test`/`cargo run` for anything that
+#      transitively depends on this crate (there is no `main`/harness able
+#      to resolve Python symbols at link time on some platforms). Keeping it
+#      out of workspace-wide `cargo build`/`check`/`clippy`/`test` avoids
+#      that failure mode for the rest of the workspace.
+#   2. `maturin` drives its own `cargo build`/`cargo rustc` invocations
+#      scoped to this crate; giving it a self-contained manifest (own
+#      `[workspace]`, own metadata) avoids surprises from the parent
+#      workspace's lockfile/target-dir/profile settings.
+#
+# Since it no longer inherits `[workspace.package]`, the shared metadata
+# fields are duplicated here (kept in sync with the root Cargo.toml).
+[workspace]
+
+[package]
+name        = "tpt-barcode-py"
+description = "Python bindings (pyo3) for tpt-barcode — QR/Code128 encoding and image scanning."
+version      = "0.1.0"
+edition      = "2021"
+rust-version = "1.84"
+authors      = ["TPT Solutions <phillip@icb.co.nz>"]
+license      = "MIT OR Apache-2.0"
+repository   = "https://github.com/tpt-solutions/tpt-barcode"
+homepage     = "https://github.com/tpt-solutions/tpt-barcode"
+keywords     = ["barcode", "qr-code", "python", "pyo3"]
+categories   = ["encoding"]
+publish = false
+
+[lib]
+name = "tpt_barcode"
+# cdylib for the Python extension module; rlib kept so `cargo test`/other
+# tooling can still link this crate normally.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.29", features = ["extension-module"] }
+tpt-barcode = { path = "../tpt-barcode", version = "0.1.0", default-features = false, features = [
+    # NB: `tpt-barcode`'s own `png` feature turns on `tpt-barcode-render`'s
+    # PNG renderer but does not itself enable the `image` crate's `png`
+    # codec (that crate is pulled in with `default-features = false`
+    # workspace-wide), so writing a PNG via `image::ImageBuffer::write_to`
+    # panics with an "Unsupported" format error at runtime. `image-input`
+    # additionally enables `image/png`, which is what actually makes PNG
+    # encoding work; it also implies `scan` and `std`, which we want anyway.
+    "std", "1d", "2d", "scan", "render", "png", "image-input",
+] }

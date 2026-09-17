@@ -17,6 +17,9 @@ exclude = [
     # explicit step: `cargo build --manifest-path crates/tpt-barcode-wasm/Cargo.toml --target wasm32-unknown-unknown`
     # or `wasm-pack build crates/tpt-barcode-wasm --target web`.
     "crates/tpt-barcode-wasm",
+    # pyo3's `extension-module` feature disables linking libpython, which
+    # breaks `cargo build`/`cargo test` for workspace-wide commands.
+    "crates/tpt-barcode-py",
 ]
 resolver = "2"
 
