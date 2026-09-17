@@ -7,7 +7,7 @@ members = [
     "crates/tpt-barcode-render",
     "crates/tpt-barcode",
 ]
-exclude = ["fuzz"]
+exclude = ["fuzz", "crates/tpt-barcode-py"]
 resolver = "2"
 
 [workspace.package]

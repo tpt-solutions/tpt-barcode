@@ -1,0 +1,28 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "tpt-barcode"
+version = "0.1.0"
+description = "Zero-allocation barcode generation and scanning (QR, Code 128, ...) — Python bindings for the tpt-barcode Rust library."
+readme = "README.md"
+license = { text = "MIT OR Apache-2.0" }
+authors = [{ name = "TPT Solutions", email = "phillip@icb.co.nz" }]
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+]
+
+[project.urls]
+Homepage = "https://github.com/tpt-solutions/tpt-barcode"
+Repository = "https://github.com/tpt-solutions/tpt-barcode"
+
+[tool.maturin]
+# The compiled extension module is `tpt_barcode` (see `Cargo.toml`
+# `[lib] name`), matching the `[project] name`'s import name.
+module-name = "tpt_barcode"
+features = ["pyo3/extension-module"]

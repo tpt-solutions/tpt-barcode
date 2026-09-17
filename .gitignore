@@ -1,5 +1,10 @@
 /target
 fuzz/target
+crates/tpt-barcode-py/target
+crates/tpt-barcode-py/.venv
+crates/tpt-barcode-py/*.egg-info
+__pycache__/
+*.whl
 Cargo.lock
 *.pdb
 

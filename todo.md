@@ -261,6 +261,16 @@ current tree. Ordered by risk.
 - [ ] **Language bindings**: WASM/npm package with a browser demo page and
       (optionally) pyo3 bindings — both are proven adoption multipliers for
       barcode libraries.
+      - [x] pyo3 half done: `crates/tpt-barcode-py` (pyo3 0.29, excluded from
+        the root workspace like `fuzz/` since `extension-module` breaks
+        workspace-wide `cargo test`). Exposes `encode_qr_svg`,
+        `encode_qr_png`, `encode_code128_svg`, `scan` (+ `ScanResult`
+        pyclass). Packaged for `maturin` (`pyproject.toml`, module name
+        `tpt_barcode`); `maturin develop` verified end-to-end locally
+        (build + install + Python smoke test covering encode/scan and a
+        full encode→PNG→scan round trip). Not published to PyPI. See
+        `crates/tpt-barcode-py/README.md`. WASM/npm half still outstanding —
+        check that box only once both halves are in.
 
 ## Ongoing / Cross-Cutting
 - [x] `cargo fmt --check` — keep clean throughout
