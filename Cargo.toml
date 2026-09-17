@@ -35,4 +35,6 @@ tpt-math-linalg-fixed = { version = "0.1.0", default-features = false }
 tpt-math-geometry     = { version = "0.1.1", default-features = false }
 
 # External
-image = { version = "0.25", default-features = false }
+# Capped below 0.25.7: newer image releases pull in moxcms, which requires
+# edition2024 and breaks the 1.84 MSRV build.
+image = { version = ">=0.25, <0.25.7", default-features = false }

@@ -649,7 +649,8 @@ mod tests {
                 for c in col..col + count {
                     let expected = u8::from(dark);
                     assert_eq!(
-                        qr.matrix[r * size + c], expected,
+                        qr.matrix[r * size + c],
+                        expected,
                         "v7 mismatch at ({r},{c})"
                     );
                 }

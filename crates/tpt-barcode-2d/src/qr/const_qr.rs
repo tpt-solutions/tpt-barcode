@@ -165,11 +165,7 @@ pub const fn qr_svg_path(payload: &[u8]) -> ConstStr<8192> {
 }
 
 /// Core string builder: full document when `full_doc`, else only the path.
-pub const fn svg_str<const N: usize>(
-    payload: &[u8],
-    ec: EcLevel,
-    full_doc: bool,
-) -> ConstStr<N> {
+pub const fn svg_str<const N: usize>(payload: &[u8], ec: EcLevel, full_doc: bool) -> ConstStr<N> {
     let (size, _version, _mask, m) = encode(payload, ec);
     let n = size + 8; // quiet zone 4 on every side
     let mut s = ConstStr {
@@ -178,7 +174,10 @@ pub const fn svg_str<const N: usize>(
     };
 
     if full_doc {
-        push_str(&mut s, "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ");
+        push_str(
+            &mut s,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ",
+        );
         s.push_num(n);
         push_str(&mut s, " ");
         s.push_num(n);
@@ -552,7 +551,12 @@ const fn encode(payload: &[u8], ec: EcLevel) -> (usize, u8, u8, [u8; MAX_MODULES
     let mut bits = [0u8; MAX_DATA_CW];
     let mut blen = 0usize;
     push_bits(&mut bits, &mut blen, 0b0100, 4);
-    push_bits(&mut bits, &mut blen, payload.len() as u32, char_count_bits(version));
+    push_bits(
+        &mut bits,
+        &mut blen,
+        payload.len() as u32,
+        char_count_bits(version),
+    );
     let mut pi = 0usize;
     while pi < payload.len() {
         push_bits(&mut bits, &mut blen, payload[pi] as u32, 8);
@@ -795,14 +799,7 @@ const fn draw_function_patterns(m: &mut [u8], reserved: &mut [bool], version: u8
     }
 }
 
-const fn mark(
-    r: usize,
-    c: usize,
-    v: u8,
-    m: &mut [u8],
-    reserved: &mut [bool],
-    size: usize,
-) {
+const fn mark(r: usize, c: usize, v: u8, m: &mut [u8], reserved: &mut [bool], size: usize) {
     m[r * size + c] = v;
     reserved[r * size + c] = true;
 }
@@ -907,7 +904,10 @@ const fn write_format(m: &mut [u8], size: usize, ec_bits: u8, mask_id: u8) {
 // ── Penalty scoring (ISO 18004 §8.8.2) ──────────────────────────────────────
 
 const fn penalty(m: &[u8], size: usize) -> u32 {
-    penalty_rule1(m, size) + penalty_rule2(m, size) + penalty_rule3(m, size) + penalty_rule4(m, size)
+    penalty_rule1(m, size)
+        + penalty_rule2(m, size)
+        + penalty_rule3(m, size)
+        + penalty_rule4(m, size)
 }
 
 const fn penalty_rule1(m: &[u8], size: usize) -> u32 {
@@ -964,7 +964,9 @@ const fn penalty_rule2(m: &[u8], size: usize) -> u32 {
         let mut c = 0usize;
         while c + 1 < size {
             let v = m[r * size + c];
-            if m[r * size + c + 1] == v && m[(r + 1) * size + c] == v && m[(r + 1) * size + c + 1] == v
+            if m[r * size + c + 1] == v
+                && m[(r + 1) * size + c] == v
+                && m[(r + 1) * size + c + 1] == v
             {
                 score += 3;
             }
@@ -1048,9 +1050,13 @@ const fn penalty_rule4(m: &[u8], size: usize) -> u32 {
     let pct = dark * 100 / total;
     let prev5 = (pct / 5) * 5;
     let next5 = prev5 + 5;
-    let prev_diff = if prev5 >= 50 { prev5 - 50 } else { 50 - prev5 };
-    let next_diff = if next5 >= 50 { next5 - 50 } else { 50 - next5 };
-    let a = if prev_diff < next_diff { prev_diff } else { next_diff };
+    let prev_diff = prev5.abs_diff(50);
+    let next_diff = next5.abs_diff(50);
+    let a = if prev_diff < next_diff {
+        prev_diff
+    } else {
+        next_diff
+    };
     (a / 5) * 10
 }
 
@@ -1079,8 +1085,7 @@ mod tests {
                 });
                 let total = info.total_codewords as usize;
                 assert_eq!(
-                    data_codewords(v, ec)
-                        + (g1c as usize + g2c as usize) * ecn as usize,
+                    data_codewords(v, ec) + (g1c as usize + g2c as usize) * ecn as usize,
                     total
                 );
             }
@@ -1094,8 +1099,13 @@ mod tests {
         for ec in [EcLevel::L, EcLevel::M, EcLevel::Q, EcLevel::H] {
             let mut covered = alloc::collections::BTreeSet::new();
             for v in 1u8..=40 {
-                let dcw = crate::qr::version::version_info(v, ec).unwrap().data_codewords();
-                let len = dcw - 2;
+                let dcw = crate::qr::version::version_info(v, ec)
+                    .unwrap()
+                    .data_codewords();
+                // Max byte-mode payload for this exact version: mode indicator
+                // (4 bits) + char-count indicator (8 bits for v1-9, 16 for
+                // v10-40) + payload bits must fit within the data codewords.
+                let len = (dcw * 8 - 4 - char_count_bits(v)) / 8;
                 let payload: Vec<u8> = (0..len)
                     .map(|i| 0x80u8 | ((i as u8).wrapping_mul(31) & 0x7F))
                     .collect();
@@ -1111,7 +1121,11 @@ mod tests {
                 );
                 // The const symbol must decode (validates internal consistency).
                 assert_eq!(
-                    crate::qr::decode_grid(&constant.modules, constant.size).unwrap(),
+                    crate::qr::decode_grid(
+                        &constant.modules[..constant.size * constant.size],
+                        constant.size
+                    )
+                    .unwrap(),
                     payload,
                     "v{v} {ec:?}: const symbol does not decode"
                 );
@@ -1126,10 +1140,11 @@ mod tests {
     /// compiles if const evaluation succeeds — and the compile-time result
     /// must equal the runtime call.
     #[test]
+    #[allow(clippy::assertions_on_constants, clippy::absurd_extreme_comparisons)]
     fn const_eval_and_svg() {
         const URL: &[u8] = b"https://example.com/tickets/1234";
 
-        const MATRIX: ConstQr = qr_matrix(URL);
+        static MATRIX: ConstQr = qr_matrix(URL);
         const SVG: &str = qr_svg(URL).as_str();
         const PATH: &str = qr_svg_path(URL).as_str();
 
@@ -1147,7 +1162,11 @@ mod tests {
         assert_eq!(MATRIX.modules, runtime.modules);
 
         // The const matrix decodes back to the payload.
-        assert_eq!(crate::qr::decode_grid(&MATRIX.modules, MATRIX.size).unwrap(), URL);
+        assert_eq!(
+            crate::qr::decode_grid(&MATRIX.modules[..MATRIX.size * MATRIX.size], MATRIX.size)
+                .unwrap(),
+            URL
+        );
     }
 
     #[test]
