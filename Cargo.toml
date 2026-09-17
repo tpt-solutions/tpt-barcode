@@ -7,7 +7,17 @@ members = [
     "crates/tpt-barcode-render",
     "crates/tpt-barcode",
 ]
-exclude = ["fuzz"]
+exclude = [
+    "fuzz",
+    # wasm-bindgen pulls in its own pinned toolchain-sensitive dependency
+    # tree (js-sys/web-sys/wasm-bindgen-macro) that only needs to resolve
+    # against wasm32-unknown-unknown, and its cdylib crate-type + panic
+    # hook wiring don't belong in `cargo clippy --workspace --all-features`
+    # runs on the native host. Building/publishing it is a separate,
+    # explicit step: `cargo build --manifest-path crates/tpt-barcode-wasm/Cargo.toml --target wasm32-unknown-unknown`
+    # or `wasm-pack build crates/tpt-barcode-wasm --target web`.
+    "crates/tpt-barcode-wasm",
+]
 resolver = "2"
 
 [workspace.package]

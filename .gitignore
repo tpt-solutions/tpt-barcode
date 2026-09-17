@@ -3,6 +3,11 @@ fuzz/target
 Cargo.lock
 *.pdb
 
+# wasm-pack build output (generated; see crates/tpt-barcode-wasm/README.md)
+crates/tpt-barcode-wasm/pkg/
+crates/tpt-barcode-wasm/target/
+templates/web/vendor/
+
 # Editor/OS
 .vscode/
 .idea/

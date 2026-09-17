@@ -1,0 +1,35 @@
+[workspace]
+
+[package]
+name        = "tpt-barcode-wasm"
+description = "WASM/npm bindings for tpt-barcode: encode QR/Code128 and scan camera frames in the browser"
+version     = "0.1.0"
+edition     = "2021"
+rust-version = "1.84"
+authors     = ["TPT Solutions <phillip@icb.co.nz>"]
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/tpt-solutions/tpt-barcode"
+homepage    = "https://github.com/tpt-solutions/tpt-barcode"
+publish     = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["console_error_panic_hook"]
+
+[dependencies]
+tpt-barcode = { path = "../tpt-barcode", version = "0.1.0", default-features = false, features = [
+    "alloc",
+    "1d",
+    "2d",
+    "scan",
+    "render",
+    "png",
+] }
+wasm-bindgen = "0.2"
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[profile.release]
+opt-level = "s"
+lto = true

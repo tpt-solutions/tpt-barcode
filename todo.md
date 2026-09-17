@@ -214,8 +214,14 @@ current tree. Ordered by risk.
       (Done 2026-09-16: support matrix + CLI/examples sections; scanner
       doc examples use `no_run`.)
 - [ ] **Templates**: an `templates/embedded` sketch (no_std + alloc frame-
-      buffer render) and a `templates/web` WASM demo page (encode + camera
-      scan) — the two most requested integration surfaces.
+      buffer render) — still open — and a `templates/web` WASM demo page
+      (encode + camera scan) — **done 2026-09-17**: `templates/web/`
+      (`index.html` + `main.js`) generates a QR Code and Code 128 barcode
+      as inline SVG from a text input, and scans live camera frames via
+      `getUserMedia` → canvas capture → `tpt-barcode-wasm::scan_rgba`,
+      overlaying the detected bounding box. Built on the new
+      `crates/tpt-barcode-wasm` npm package (see Phase 10 "Language
+      bindings"). `templates/embedded` remains unstarted.
 
 ## Phase 9 — Hardening & Automation
 
@@ -258,9 +264,22 @@ current tree. Ordered by risk.
       stage; `target_feature` runtime detection already in place.
 - [ ] **Bilinear grid sampling** option in `homography::sample_grid` for
       low-resolution images (currently nearest-neighbour only).
-- [ ] **Language bindings**: WASM/npm package with a browser demo page and
-      (optionally) pyo3 bindings — both are proven adoption multipliers for
-      barcode libraries.
+- [x] **Language bindings (WASM/npm half — done 2026-09-17)**: new
+      `crates/tpt-barcode-wasm` crate exposes a `#[wasm_bindgen]` API —
+      `encode_qr_svg`/`encode_qr_png`, `encode_code128_svg`,
+      `scan_gray`/`scan_rgba` (returning `WasmScanResult` with
+      `text`/`format`/`corners`) — over the existing facade, buildable via
+      `wasm-pack build --target web` into a publish-shaped (but
+      unpublished) npm package; see its README for build/usage. It is
+      excluded from the main Cargo workspace (own `[workspace]` table,
+      listed in the root `Cargo.toml` `exclude`) so wasm-bindgen's
+      dependency tree and `cdylib` crate-type don't affect
+      `cargo clippy --workspace --all-features` on the native host — the
+      same treatment as `fuzz`. `templates/web/` (Phase 8) consumes this
+      crate's `wasm-pack` output directly rather than re-implementing
+      bindings. The **pyo3/Python half is not done here** — being handled
+      by a separate agent in parallel; do not mark it complete based on
+      this entry.
 
 ## Ongoing / Cross-Cutting
 - [x] `cargo fmt --check` — keep clean throughout
