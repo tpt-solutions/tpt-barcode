@@ -104,21 +104,21 @@ pub fn decode_upca_runs(runs: &[u32]) -> Result<[u8; 12], DecodeError> {
 
 /// Decode a Code 39 symbol from alternating run lengths.
 pub fn decode_code39_runs(runs: &[u32]) -> Result<alloc::string::String, DecodeError> {
-    // Code 39 decoders work on wide/narrow widths; keep raw proportions but
-    // clamp to the u8 the decoder accepts.
-    let mut widths = Vec::with_capacity(runs.len());
-    for &r in runs {
-        widths.push(r.min(255) as u8);
-    }
+    // Code 39's decoder classifies each width as narrow (<2) or wide (>=2)
+    // relative to the narrowest element, so raw pixel run lengths must be
+    // normalized to module units first — passing them through unscaled only
+    // works by coincidence at exactly 1px/module, which no real camera
+    // capture produces.
+    let widths = normalize_runs(runs).ok_or(DecodeError::InvalidFormat)?;
     crate::code39::decode(&widths)
 }
 
 /// Decode a Code 128 (Subset B) symbol from alternating run lengths.
 pub fn decode_code128_runs(runs: &[u32]) -> Result<alloc::string::String, DecodeError> {
-    let mut widths = Vec::with_capacity(runs.len());
-    for &r in runs {
-        widths.push(r.min(255) as u8);
-    }
+    // Code 128's decoder matches each 6-element symbol against a fixed
+    // 1-4 unit width table, so — as with Code 39 above — raw pixel run
+    // lengths must be normalized to module units before decoding.
+    let widths = normalize_runs(runs).ok_or(DecodeError::InvalidFormat)?;
     crate::code128::decode_b(&widths)
 }
 
@@ -149,5 +149,41 @@ mod tests {
             Some(alloc::vec![1, 0, 1, 1, 0, 0])
         );
         assert_eq!(runs_to_modules(&runs, 5), None); // wrong total
+    }
+
+    /// Regression: `decode_code128_runs`/`decode_code39_runs` used to pass
+    /// raw run lengths straight to the symbology decoders instead of
+    /// normalizing to module units first, so decoding only worked by
+    /// coincidence at exactly 1px/module — never true for a real camera
+    /// capture, where the module scale is whatever the finder detected.
+    #[test]
+    fn code128_runs_decode_at_multiple_pixel_scales() {
+        let text = b"SKU-00123";
+        let code = crate::code128::encode_b(text).unwrap();
+        for scale in [1u32, 2, 3, 5] {
+            let scaled_modules: alloc::vec::Vec<u8> = code
+                .modules
+                .iter()
+                .map(|&w| (w as u32 * scale) as u8)
+                .collect();
+            let runs = scaled_modules.iter().map(|&w| w as u32).collect::<alloc::vec::Vec<_>>();
+            let decoded = decode_code128_runs(&runs).unwrap();
+            assert_eq!(decoded.as_bytes(), text, "failed at scale {scale}");
+        }
+    }
+
+    #[test]
+    fn code39_runs_decode_at_multiple_pixel_scales() {
+        let text = b"PART-A1";
+        let code = crate::code39::encode(text).unwrap();
+        for scale in [1u32, 2, 3, 5] {
+            let runs: alloc::vec::Vec<u32> = code
+                .modules
+                .iter()
+                .map(|&w| w as u32 * scale)
+                .collect();
+            let decoded = decode_code39_runs(&runs).unwrap();
+            assert_eq!(decoded.as_bytes(), text, "failed at scale {scale}");
+        }
     }
 }
