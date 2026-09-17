@@ -166,7 +166,10 @@ mod tests {
                 .iter()
                 .map(|&w| (w as u32 * scale) as u8)
                 .collect();
-            let runs = scaled_modules.iter().map(|&w| w as u32).collect::<alloc::vec::Vec<_>>();
+            let runs = scaled_modules
+                .iter()
+                .map(|&w| w as u32)
+                .collect::<alloc::vec::Vec<_>>();
             let decoded = decode_code128_runs(&runs).unwrap();
             assert_eq!(decoded.as_bytes(), text, "failed at scale {scale}");
         }
@@ -177,11 +180,8 @@ mod tests {
         let text = b"PART-A1";
         let code = crate::code39::encode(text).unwrap();
         for scale in [1u32, 2, 3, 5] {
-            let runs: alloc::vec::Vec<u32> = code
-                .modules
-                .iter()
-                .map(|&w| w as u32 * scale)
-                .collect();
+            let runs: alloc::vec::Vec<u32> =
+                code.modules.iter().map(|&w| w as u32 * scale).collect();
             let decoded = decode_code39_runs(&runs).unwrap();
             assert_eq!(decoded.as_bytes(), text, "failed at scale {scale}");
         }
