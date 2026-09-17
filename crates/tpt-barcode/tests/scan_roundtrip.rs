@@ -270,3 +270,18 @@ fn scan_upca_from_rendered_bars() {
     let expected: String = encoded.digits.iter().map(|&d| (d + b'0') as char).collect();
     assert_eq!(results[0].text(), expected);
 }
+
+#[test]
+fn scan_with_bilinear_sampling() {
+    let payload = b"bilinear sampling probe";
+    let qr = tpt_barcode::qr::encode(payload, tpt_barcode::core::EcLevel::M).unwrap();
+    let (pixels, dim) = render_luma(&qr, 4, 4);
+
+    let results = tpt_barcode::scan(&pixels, dim, dim)
+        .formats(&[tpt_barcode::core::Format::QrCode])
+        .bilinear(true)
+        .execute()
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].text(), "bilinear sampling probe");
+}

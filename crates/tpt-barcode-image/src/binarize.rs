@@ -97,12 +97,18 @@ fn binarize_simd(
             return binarize_simd_sse2(pixels, width, height, out, window, k);
         }
     }
+    #[cfg(all(target_arch = "aarch64", feature = "std"))]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            return crate::neon::binarize_simd_neon(pixels, width, height, out, window, k);
+        }
+    }
     binarize_scalar(pixels, width, height, out, window, k);
 }
 
 /// Build the integral image (shared by scalar and SIMD paths).
 #[cfg(feature = "simd")]
-fn build_integral(pixels: &[u8], width: usize, height: usize) -> alloc::vec::Vec<u32> {
+pub(super) fn build_integral(pixels: &[u8], width: usize, height: usize) -> alloc::vec::Vec<u32> {
     let iw = width + 1;
     let mut integral = alloc::vec![0u32; iw * (height + 1)];
     for y in 1..=height {
@@ -323,7 +329,7 @@ mod tests {
     fn global_threshold_midpoint() {
         let pixels: [u8; 4] = [0, 100, 155, 255];
         let t = global_threshold(&pixels);
-        assert!(t >= 100 && t <= 155);
+        assert!((100..=155).contains(&t));
     }
 
     #[test]
@@ -347,7 +353,6 @@ mod tests {
 
 #[cfg(all(test, feature = "simd", target_arch = "x86_64"))]
 mod simd_micro {
-    use super::*;
 
     #[test]
     fn widen_mul_cmp_narrow_matches_scalar() {

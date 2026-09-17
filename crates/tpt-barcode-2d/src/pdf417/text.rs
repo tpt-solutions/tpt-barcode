@@ -272,11 +272,6 @@ pub fn encode_text(data: &[u8]) -> Result<Vec<u16>, DecodeError> {
                 sm = target;
             }
         }
-        #[cfg(all(test, feature = "std"))]
-        std::eprintln!(
-            "enc b={b} target={target:?} sm={sm:?} val={:?}",
-            value_for(sm, b)
-        );
         interim.push(value_for(sm, b).ok_or(DecodeError::InvalidFormat)? as u16);
     }
 

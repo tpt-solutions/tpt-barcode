@@ -2,7 +2,7 @@
 
 /// Returns `true` if the module at (row, col) is dark under mask pattern `mask_id`.
 #[inline(always)]
-pub fn is_masked(mask_id: u8, row: usize, col: usize) -> bool {
+pub const fn is_masked(mask_id: u8, row: usize, col: usize) -> bool {
     let r = row as u32;
     let c = col as u32;
     match mask_id {

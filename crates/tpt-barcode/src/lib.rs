@@ -57,7 +57,9 @@ pub mod prelude;
 #[cfg(all(feature = "2d", feature = "alloc"))]
 pub mod qr {
     //! QR Code encoding convenience module.
-    pub use tpt_barcode_2d::qr::{decode_grid_detailed, encode, DecodedQr, QrBuilder, QrCode};
+    pub use tpt_barcode_2d::qr::{
+        decode_grid_detailed, encode, encode_gs1, encode_sjis, DecodedQr, QrBuilder, QrCode,
+    };
 }
 
 // ── Extension traits: one-line rendering ─────────────────────────────────────
@@ -224,6 +226,7 @@ pub struct Scanner<'a> {
     height: usize,
     formats: alloc::vec::Vec<tpt_barcode_core::Format>,
     try_harder: bool,
+    bilinear: bool,
 }
 
 #[cfg(all(feature = "scan", feature = "alloc"))]
@@ -236,6 +239,7 @@ impl<'a> Scanner<'a> {
             height,
             formats: alloc::vec![tpt_barcode_core::Format::QrCode],
             try_harder: false,
+            bilinear: false,
         }
     }
 
@@ -252,6 +256,14 @@ impl<'a> Scanner<'a> {
     /// matrix inversion.
     pub fn try_harder(mut self, enabled: bool) -> Self {
         self.try_harder = enabled;
+        self
+    }
+
+    /// Use bilinear interpolation when sampling the module grid (softer
+    /// edges on low-resolution or perspective-skewed images; the
+    /// nearest-neighbour default is sharper on clean sources).
+    pub fn bilinear(mut self, enabled: bool) -> Self {
+        self.bilinear = enabled;
         self
     }
 
@@ -484,7 +496,19 @@ impl<'a> Scanner<'a> {
         // takes the transform mapping output (module) pixels → image pixels,
         // which is exactly `h` (module → image).
         let mut grid = alloc::vec![0u8; size * size];
-        homography::sample_grid(binary, self.width, self.height, &h, &mut grid, size, size);
+        if self.bilinear {
+            homography::sample_grid_bilinear(
+                binary,
+                self.width,
+                self.height,
+                &h,
+                &mut grid,
+                size,
+                size,
+            );
+        } else {
+            homography::sample_grid(binary, self.width, self.height, &h, &mut grid, size, size);
+        }
 
         // Decode: format info → unmask → RS → payload (+ metadata)
         let detailed = tpt_barcode_2d::qr::decode_grid_detailed(&grid, size).ok()?;

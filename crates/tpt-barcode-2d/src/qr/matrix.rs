@@ -44,6 +44,21 @@ fn bch_remainder(data: u16) -> u16 {
     rem
 }
 
+/// BCH version-info generator x^12+x^11+x^10+x^9+x^8+x^5+x^2+1 (ISO 18004 §8.10).
+const VERSION_GENERATOR: u32 = 0x1F25;
+
+/// 18-bit version information codeword (6 data bits + 12 BCH bits) for
+/// versions 7–40. Unlike format information it is not XOR-masked.
+pub const fn version_info_bits(version: u8) -> u32 {
+    let mut rem = version as u32;
+    let mut i = 0;
+    while i < 12 {
+        rem = (rem << 1) ^ ((rem >> 11) * VERSION_GENERATOR);
+        i += 1;
+    }
+    ((version as u32) << 12) | rem
+}
+
 /// Validate an unmasked 15-bit format value (must be divisible by the BCH
 /// generator). Returns the 5-bit payload `(ec_bits << 3) | mask_id`.
 pub fn validate_format(unmasked: u16) -> Option<u8> {
@@ -159,6 +174,20 @@ pub fn function_patterns(version: u8) -> (Vec<u8>, Vec<bool>) {
 
     // Dark module at (4·version + 9, 8)
     mark!(4 * version as usize + 9, 8, DARK);
+
+    // Version information (versions 7+): the 18-bit BCH codeword appears in
+    // two 3×6 copies — bottom-left (rows size-11..size-9, cols 0..5) and
+    // top-right (rows 0..5, cols size-11..size-9), bit 0 (LSB) first.
+    if version >= 7 {
+        let bits = version_info_bits(version);
+        for i in 0..18usize {
+            let bit = ((bits >> i) & 1) as u8;
+            let a = size - 11 + i % 3;
+            let b = i / 3;
+            mark!(a, b, bit);
+            mark!(b, a, bit);
+        }
+    }
 
     // Reserve format information areas
     // Top-left: row 8 cols 0–8 and col 8 rows 0–8 (timing cell (8,6) already marked)
@@ -316,6 +345,41 @@ mod tests {
                 assert_eq!(payload, ((ec & 0b11) << 3) | (mask & 0b111));
             }
         }
+    }
+
+    #[test]
+    fn version_info_bch_valid() {
+        // The 18-bit codeword must be divisible by the generator polynomial
+        // 0x1F25 and carry the version in its 6 high bits.
+        for v in 7u8..=40 {
+            let bits = version_info_bits(v);
+            assert_eq!((bits >> 12) as u8, v);
+            let mut rem = bits;
+            for i in (12..18).rev() {
+                if rem >> i & 1 == 1 {
+                    rem ^= VERSION_GENERATOR << (i - 12);
+                }
+            }
+            assert_eq!(rem, 0, "v{v}: BCH remainder not zero");
+        }
+    }
+
+    #[test]
+    fn version_info_known_value() {
+        // ISO 18004 §8.10 example: version 7 → 0x07C94.
+        assert_eq!(version_info_bits(7), 0x07C94);
+    }
+
+    #[test]
+    fn version_seven_round_trip() {
+        use super::super::QrCode;
+        use tpt_barcode_core::traits::EcLevel;
+        // v6-L holds 136 data codewords; 150 bytes forces version 7, exercising
+        // the version-info blocks.
+        let payload = vec![b'a'; 150];
+        let qr = QrCode::encode(&payload, EcLevel::L).unwrap();
+        assert_eq!(qr.version, 7);
+        assert_eq!(qr.decode().unwrap(), payload);
     }
 
     #[test]

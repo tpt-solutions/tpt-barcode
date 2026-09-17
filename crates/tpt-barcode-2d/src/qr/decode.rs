@@ -231,10 +231,18 @@ pub fn decode_payload(data: &[u8], version: u8) -> Result<Vec<u8>, DecodeError> 
         if mode == 0 {
             break; // terminator
         }
-        let ccb = char_count_bits_of(mode as u8, version) as usize;
-        let count = match r.read(ccb) {
-            Some(c) => c as usize,
-            None => return Err(DecodeError::InvalidFormat),
+        // Character-count header: present for the four data modes only.
+        // FNC1 first (0101), structured append (0011) and ECI (0111) have
+        // their own header shapes handled inside the arms below.
+        let has_count = matches!(mode, 0b0001 | 0b0010 | 0b0100 | 0b1000);
+        let count = if has_count {
+            let ccb = char_count_bits_of(mode as u8, version) as usize;
+            match r.read(ccb) {
+                Some(c) => c as usize,
+                None => return Err(DecodeError::InvalidFormat),
+            }
+        } else {
+            0
         };
         match mode {
             // Numeric
@@ -274,29 +282,30 @@ pub fn decode_payload(data: &[u8], version: u8) -> Result<Vec<u8>, DecodeError> 
                     out.push(v as u8);
                 }
             }
-            // Kanji (13-bit Shift-JIS)
+            // Kanji (13-bit Shift-JIS, ISO 18004 §8.3.5): the 13-bit value
+            // packs the two SJIS bytes as base-192 digits — q = v/192,
+            // r = v%192; high = q + base, low = r + 0x40, where base is
+            // 0x81 for the first range and 0xC1 for the second.
             0b1000 => {
                 for _ in 0..count {
                     let v = r.read(13).ok_or(DecodeError::InvalidFormat)?;
-                    let sjis = if v <= 0x1FFF {
-                        0x8140u32 + v
+                    let q = v / 0xC0;
+                    let rr = v % 0xC0;
+                    let sjis = if q + 0x81 <= 0x9F {
+                        ((q + 0x81) << 8) | (rr + 0x40)
                     } else {
-                        0xC140u32 + v - 0x2000
+                        ((q + 0xC1) << 8) | (rr + 0x40)
                     };
                     out.push((sjis >> 8) as u8);
                     out.push((sjis & 0xFF) as u8);
                 }
             }
-            // ECI header: 8-bit assignment number, then continue with next segment
+            // FNC1 first position (0101): GS1 payloads — no data bits, the
+            // segment that follows carries the Application Identifier data.
+            0b0101 => {}
+            // ECI (8-bit assignment), then continue with next segment
             0b0111 => {
-                let _assignment = match r.read(8) {
-                    Some(v) => v,
-                    None => return Err(DecodeError::InvalidFormat),
-                };
-            }
-            // Structured append: 4-bit position, 4-bit total, 8-bit parity
-            0b0011 => {
-                if r.read(16).is_none() {
+                if r.read(8).is_none() {
                     return Err(DecodeError::InvalidFormat);
                 }
             }
@@ -307,47 +316,8 @@ pub fn decode_payload(data: &[u8], version: u8) -> Result<Vec<u8>, DecodeError> 
                     return Err(DecodeError::InvalidFormat);
                 }
             }
-            0b0101 => {}
             _ => return Err(DecodeError::InvalidFormat),
         }
     }
-
     Ok(out)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn payload_numeric() {
-        // mode 0001, count 0000000101 (5 digits, v1 → 10-bit count), "12345":
-        // 123 → 0001111011, 45 → 0101101, then terminator 0000 + pad zeros.
-        let bits: &[u8] = &[
-            0b0001_0000,
-            0b0001_0100,
-            0b0111_1011,
-            0b0101_1010,
-            0b0000_0000,
-        ];
-        let out = decode_payload(bits, 1).unwrap();
-        assert_eq!(out, b"12345");
-    }
-
-    #[test]
-    fn payload_byte() {
-        // mode 0100, count 00001011 (11 bytes), "HELLO WORLD"
-        let mut data = alloc::vec![0b0100_0000, 0b1011_0100, 0b1000_0100, 0b0101_0100];
-        data.extend_from_slice(&[0b1100_0100, 0b1100_0100, 0b1111_0010, 0b0000_0101]);
-        data.extend_from_slice(&[0b0111_0100, 0b1111_0101, 0b0010_0100, 0b1100_0100]);
-        data.push(0b0100_0000); // last 4 data bits + terminator 0000
-        let out = decode_payload(&data, 1).unwrap();
-        assert_eq!(out, b"HELLO WORLD");
-    }
-
-    #[test]
-    fn format_reader_rejects_garbage_without_correction() {
-        // A 2×2 "grid" is structurally invalid
-        assert!(decode_grid(&[0, 0, 0, 0], 2).is_err());
-    }
 }

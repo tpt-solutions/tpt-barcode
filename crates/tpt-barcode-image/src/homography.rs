@@ -118,6 +118,60 @@ pub fn sample_grid(
     }
 }
 
+/// `floor` for f64 without `std` float methods (truncation + compare).
+fn floor_f64(x: f64) -> f64 {
+    let t = x as i64 as f64;
+    if x < t {
+        t - 1.0
+    } else {
+        t
+    }
+}
+
+/// Bilinear variant of [`sample_grid`]: instead of nearest-neighbour, the
+/// four surrounding source pixels are weighted by their distance to the
+/// sample point. Reduces aliasing on low-resolution or perspective-skewed
+/// images at the cost of four pixel reads per module.
+pub fn sample_grid_bilinear(
+    binary: &[u8],
+    src_w: usize,
+    src_h: usize,
+    h_inv: &Matrix3<f64>,
+    out: &mut [u8],
+    dst_w: usize,
+    dst_h: usize,
+) {
+    debug_assert_eq!(out.len(), dst_w * dst_h);
+    debug_assert_eq!(binary.len(), src_w * src_h);
+
+    let px = |x: i64, y: i64| -> f64 {
+        if x >= 0 && y >= 0 && (x as usize) < src_w && (y as usize) < src_h {
+            f64::from(binary[y as usize * src_w + x as usize])
+        } else {
+            0.0
+        }
+    };
+
+    for row in 0..dst_h {
+        for col in 0..dst_w {
+            let (sx, sy) = map_point(h_inv, col as f64 + 0.5, row as f64 + 0.5);
+            // Bilerp over the 4 pixels around the (sx-0.5, sy-0.5) sample grid
+            let fx = sx - 0.5;
+            let fy = sy - 0.5;
+            let x0 = floor_f64(fx);
+            let y0 = floor_f64(fy);
+            let dx = fx - x0;
+            let dy = fy - y0;
+            let (ix, iy) = (x0 as i64, y0 as i64);
+            let v = (1.0 - dx) * (1.0 - dy) * px(ix, iy)
+                + dx * (1.0 - dy) * px(ix + 1, iy)
+                + (1.0 - dx) * dy * px(ix, iy + 1)
+                + dx * dy * px(ix + 1, iy + 1);
+            out[row * dst_w + col] = if v > 128.0 { 1 } else { 0 };
+        }
+    }
+}
+
 /// Round half away from zero without `std` float methods. Pixel coordinates
 /// are small enough that truncation via integer casts is safe; NaN maps to 0.
 fn round_half_away(x: f64) -> f64 {
@@ -190,7 +244,6 @@ fn solve_8x8(a: &[f64; 64], b: &[f64; 8]) -> Option<[f64; 8]> {
 mod tests {
     use super::*;
     use tpt_math_geometry::Point2;
-    use tpt_math_linalg_fixed::Vector2;
 
     fn pt(x: f64, y: f64) -> Point2<f64> {
         Point2::from_array([x, y])
@@ -236,5 +289,50 @@ mod tests {
         let (sx, sy) = map_point(&h_inv, 10.5, 20.5);
         assert!((sx - 0.5).abs() < 1e-5, "sx={sx}");
         assert!((sy - 0.5).abs() < 1e-5, "sy={sy}");
+    }
+}
+
+#[cfg(test)]
+mod bilinear_tests {
+    use super::*;
+    extern crate alloc;
+    use alloc::vec;
+
+    #[test]
+    fn bilinear_uniform_interior_matches() {
+        // Bilinear interpolation of a uniform image must stay uniform in the
+        // interior (edges blend with the out-of-bounds light border, which is
+        // expected darkening).
+        let w = 40usize;
+        let binary = vec![255u8; w * w];
+        let id = Matrix3::new([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+        let mut bilerp = vec![0u8; w * w];
+        sample_grid_bilinear(&binary, w, w, &id, &mut bilerp, w, w);
+        for r in 1..w - 1 {
+            for c in 1..w - 1 {
+                assert_eq!(bilerp[r * w + c], 1, "interior ({r},{c}) not dark");
+            }
+        }
+    }
+
+    #[test]
+    fn bilinear_centre_matches_nearest_midpoints() {
+        // A half-dark / half-light image: bilinear must classify the dark
+        // half dark and the light half light away from the boundary.
+        let w = 40usize;
+        let mut binary = vec![0u8; w * w];
+        for r in 0..w {
+            for c in 0..w / 2 {
+                binary[r * w + c] = 255;
+            }
+        }
+        let id = Matrix3::new([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+        let mut out = vec![0u8; w * w];
+        sample_grid_bilinear(&binary, w, w, &id, &mut out, w, w);
+        // column 10 is well inside the dark half; column 30 in the light half
+        for r in 1..w - 1 {
+            assert_eq!(out[r * w + 10], 1, "row {r} col 10 should be dark");
+            assert_eq!(out[r * w + 30], 0, "row {r} col 30 should be light");
+        }
     }
 }

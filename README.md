@@ -54,14 +54,14 @@ for result in results {
 
 ## Workspace Crates
 
-| Crate | Description | `no_std` |
-|---|---|---|
-| `tpt-barcode-core` | GF(256) (0x11D + 0x12D), Reed-Solomon error correction, shared traits | yes |
-| `tpt-barcode-1d` | Code 128, EAN-13, UPC-A, Code 39 | yes |
-| `tpt-barcode-2d` | QR Code, DataMatrix, PDF417 | yes |
-| `tpt-barcode-image` | Adaptive binarization, finder detection, homography | yes |
-| `tpt-barcode-render` | SVG, PNG, ANSI terminal output | std |
-| `tpt-barcode` | Facade — re-exports all crates via feature flags | opt-in |
+| Crate | Description | Docs | `no_std` |
+|---|---|---|---|
+| [`tpt-barcode-core`](crates/tpt-barcode-core) | GF(256) (0x11D + 0x12D), Reed-Solomon error correction, shared traits | [README](crates/tpt-barcode-core/README.md) | yes |
+| [`tpt-barcode-1d`](crates/tpt-barcode-1d) | Code 128, EAN-13, UPC-A, Code 39 + run-length scanning | [README](crates/tpt-barcode-1d/README.md) | yes |
+| [`tpt-barcode-2d`](crates/tpt-barcode-2d) | QR Code, DataMatrix, PDF417 (encode + decode) | [README](crates/tpt-barcode-2d/README.md) | yes |
+| [`tpt-barcode-image`](crates/tpt-barcode-image) | Binarization, finder detection, homography | [README](crates/tpt-barcode-image/README.md) | yes |
+| [`tpt-barcode-render`](crates/tpt-barcode-render) | SVG, PNG, ANSI terminal output | [README](crates/tpt-barcode-render/README.md) | std |
+| [`tpt-barcode`](crates/tpt-barcode) | Facade — re-exports all crates via feature flags | [README](README.md) | opt-in |
 
 ## Feature Flags
 

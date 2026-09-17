@@ -1,5 +1,6 @@
 //! QR Code generation and decoding pipeline (ISO/IEC 18004).
 
+pub mod const_qr;
 pub mod decode;
 pub mod ec;
 pub mod mask;
@@ -107,6 +108,176 @@ impl QrCode {
 #[cfg(feature = "alloc")]
 pub fn encode(data: impl AsRef<[u8]>, ec: EcLevel) -> Result<QrCode, EncodeError> {
     QrCode::encode(data.as_ref(), ec)
+}
+
+/// Shift-JIS double-byte code for a byte pair, if it is in the Kanji-mode
+/// ranges (ISO 18004 §8.3.5): 0x8140..=0x9FFC or 0xE040..=0xEBBF.
+pub fn kanji_code(pair: [u8; 2]) -> Option<u16> {
+    // ISO 18004 §8.3.5: the two SJIS bytes are packed as base-192 digits —
+    // v = q·192 + r with q = high − base, r = low − 0x40, base = 0x81
+    // (first range) or 0xC1 (second range) — producing a 13-bit value.
+    let (q, r) = match pair[0] {
+        0x81..=0x93 => (pair[0] - 0x81, pair[1].wrapping_sub(0x40)),
+        0xC1..=0xEB => (pair[0] - 0xC1, pair[1].wrapping_sub(0x40)),
+        _ => return None,
+    };
+    if r > 0xBB {
+        return None;
+    }
+    let v = u16::from(q) * 0xC0 + u16::from(r);
+    (v <= 0x1FFF).then_some(v)
+}
+
+/// Encode Shift-JIS bytes as a QR Code using Kanji segments for double-byte
+/// characters and byte segments for everything else (ISO 18004 §8.3.4/8.3.5).
+///
+/// Unlike [`encode`] — which always uses a single byte-mode segment — this
+/// function interleaves Kanji and byte segments, packing each double-byte
+/// character into 13 bits (~2× denser than byte mode for Japanese text).
+#[cfg(feature = "alloc")]
+pub fn encode_sjis(sjis: &[u8], ec: EcLevel) -> Result<QrCode, EncodeError> {
+    use mode::{encode_byte, BitBuffer, Mode};
+
+    if sjis.is_empty() {
+        return Err(EncodeError::InvalidCharacter);
+    }
+
+    // scan into segments: (is_kanji, values); kanji values are 13-bit codes,
+    // byte segments keep the raw bytes.
+    let mut segments: Vec<(Mode, Vec<u16>)> = Vec::new();
+    let mut i = 0usize;
+    while i < sjis.len() {
+        let pair: [u8; 2] = [sjis[i], sjis.get(i + 1).copied().unwrap_or(0)];
+        if let Some(code) = kanji_code(pair) {
+            if !matches!(segments.last(), Some((Mode::Kanji, _))) {
+                segments.push((Mode::Kanji, Vec::new()));
+            }
+            segments.last_mut().unwrap().1.push(code);
+            i += 2;
+        } else {
+            if !matches!(segments.last(), Some((Mode::Byte, _))) {
+                segments.push((Mode::Byte, Vec::new()));
+            }
+            segments.last_mut().unwrap().1.push(u16::from(sjis[i]));
+            i += 1;
+        }
+    }
+
+    // select the smallest version where all segments fit
+    for version in 1u8..=40 {
+        let info = version::version_info(version, ec).ok_or(EncodeError::Unsupported)?;
+        let capacity = info.data_codewords() * 8;
+        let mut need = 0usize;
+        let mut valid = true;
+        for (m, vals) in &segments {
+            let ccb = m.char_count_bits(version) as usize;
+            need += 4
+                + ccb
+                + match m {
+                    Mode::Kanji => vals.len() * 13,
+                    Mode::Byte => vals.len() * 8,
+                    _ => {
+                        valid = false;
+                        0
+                    }
+                };
+        }
+        let _ = valid;
+        if capacity < need + 4 {
+            continue;
+        }
+
+        // build the bitstream
+        let mut buf = BitBuffer::new();
+        for (m, vals) in &segments {
+            buf.push_bits(m.indicator() as u32, 4);
+            buf.push_bits(vals.len() as u32, m.char_count_bits(version) as usize);
+            match m {
+                Mode::Kanji => {
+                    for &v in vals {
+                        buf.push_bits(u32::from(v), 13);
+                    }
+                }
+                _ => {
+                    for &v in vals {
+                        encode_byte(&[v as u8], &mut buf);
+                    }
+                }
+            }
+        }
+        // terminator + byte alignment + padding
+        let remaining = capacity.saturating_sub(buf.len());
+        buf.push_bits(0, remaining.min(4));
+        while buf.len() % 8 != 0 {
+            buf.push_bits(0, 1);
+        }
+        let mut pad = 0u8;
+        while buf.len() < capacity {
+            buf.push_bits(if pad == 0 { 0xEC } else { 0x11 } as u32, 8);
+            pad ^= 1;
+        }
+
+        let data_bytes = buf.as_bytes();
+        let codewords = ec::interleave_blocks(data_bytes, &info);
+        let (matrix, mask_id) = matrix::build(version, &codewords, ec_bits_of(ec), None);
+        return Ok(QrCode {
+            size: version::modules(version),
+            matrix,
+            version,
+            ec_level: ec,
+            mask_id,
+        });
+    }
+    Err(EncodeError::DataTooLong)
+}
+
+/// Encode a GS1 Application-Standard payload: FNC1 in first position
+/// followed by a byte-mode segment (ISO 18004 §8.3.2). Payloads conventionally
+/// start with the Application Identifier in parentheses-free numeric form,
+/// e.g. `01095011010209171719050810AB123`.
+#[cfg(feature = "alloc")]
+pub fn encode_gs1(data: impl AsRef<[u8]>, ec: EcLevel) -> Result<QrCode, EncodeError> {
+    use mode::{encode_byte, BitBuffer, Mode};
+
+    let data = data.as_ref();
+    if data.is_empty() {
+        return Err(EncodeError::InvalidCharacter);
+    }
+    let version =
+        version::select_version(data.len() + 1, Mode::Byte, ec).ok_or(EncodeError::DataTooLong)?;
+    let info = version::version_info(version, ec).ok_or(EncodeError::Unsupported)?;
+    let capacity_bits = info.data_codewords() * 8;
+
+    // FNC1 first position (0101) + byte-mode segment (0100)
+    let mut buf = BitBuffer::new();
+    buf.push_bits(0b0101, 4);
+    buf.push_bits(Mode::Byte.indicator() as u32, 4);
+    buf.push_bits(
+        data.len() as u32,
+        Mode::Byte.char_count_bits(version) as usize,
+    );
+    encode_byte(data, &mut buf);
+    let remaining = capacity_bits.saturating_sub(buf.len());
+    buf.push_bits(0, remaining.min(4));
+    while buf.len() % 8 != 0 {
+        buf.push_bits(0, 1);
+    }
+    let mut pad = 0u8;
+    while buf.len() < capacity_bits {
+        buf.push_bits(if pad == 0 { 0xEC } else { 0x11 } as u32, 8);
+        pad ^= 1;
+    }
+
+    let data_bytes = buf.as_bytes();
+    let codewords = ec::interleave_blocks(data_bytes, &info);
+    let (matrix, mask_id) = matrix::build(version, &codewords, ec_bits_of(ec), None);
+    Ok(QrCode {
+        size: version::modules(version),
+        matrix,
+        version,
+        ec_level: ec,
+        mask_id,
+    })
 }
 
 /// Builder for fine-grained QR Code control: forced version, forced mask,
@@ -416,6 +587,77 @@ mod tests {
             QrBuilder::new().version(1).build(&long),
             Err(EncodeError::DataTooLong)
         ));
+    }
+
+    #[test]
+    fn sjis_kanji_round_trip() {
+        // "日本語" in Shift-JIS: 93 FA 96 7B 8C EA
+        let sjis: &[u8] = &[0x93, 0xFA, 0x96, 0x7B, 0x8C, 0xEA];
+        let qr = encode_sjis(sjis, EcLevel::M).unwrap();
+        let decoded = qr.decode().unwrap();
+        assert_eq!(decoded, sjis, "Kanji segments must round-trip SJIS bytes");
+    }
+
+    #[test]
+    fn sjis_mixed_kanji_and_ascii() {
+        // "ASCII" (5 bytes) + "語" (2 bytes SJIS: 8C EA)
+        let sjis: &[u8] = &[b'A', b'S', b'C', b'I', b'I', 0x8C, 0xEA];
+        let qr = encode_sjis(sjis, EcLevel::M).unwrap();
+        assert_eq!(qr.decode().unwrap(), sjis);
+    }
+
+    #[test]
+    fn kanji_code_ranges() {
+        // base-192 packing: v = (high - base)*0xC0 + (low - 0x40)
+        assert_eq!(kanji_code([0x81, 0x40]), Some(0));
+        let hi = 0x93u16 - 0x81;
+        let lo = 0xFAu16 - 0x40;
+        assert_eq!(kanji_code([0x93, 0xFA]), Some(hi * 0xC0 + lo));
+        let hi = 0xE0u16 - 0xC1;
+        assert_eq!(kanji_code([0xE0, 0x40]), Some(hi * 0xC0));
+        assert_eq!(kanji_code([0x41, 0x40]), None, "ASCII pair not kanji");
+    }
+
+    #[test]
+    fn gs1_fnc1_first_position() {
+        let qr = encode_gs1("01095011010209171719050810AB123", EcLevel::M).unwrap();
+        let decoded = qr.decode().unwrap();
+        assert_eq!(decoded, b"01095011010209171719050810AB123");
+    }
+
+    /// Reference matrix for `b"a" * 150` at version 7, EC L, mask 1, generated
+    /// by the Python `qrcode` library (ISO 18004 conformance anchor). Run-length
+    /// encoded per row: counts alternate light/dark, first count is light.
+    #[test]
+    fn v7_matches_python_qrcode() {
+        let fixture = include_str!("../../tests/v7_mask1_fixture.txt");
+        let payload = alloc::vec![b'a'; 150];
+        let qr = QrBuilder::new()
+            .ec_level(EcLevel::L)
+            .version(7)
+            .mask(1)
+            .build(payload)
+            .unwrap();
+        assert_eq!(qr.version, 7);
+        assert_eq!(qr.mask_id, 1);
+        let size = qr.size;
+        for (r, line) in fixture.split(';').enumerate() {
+            let mut col = 0usize;
+            let mut dark = false;
+            for count in line.split(',') {
+                let count: usize = count.parse().unwrap();
+                for c in col..col + count {
+                    let expected = u8::from(dark);
+                    assert_eq!(
+                        qr.matrix[r * size + c], expected,
+                        "v7 mismatch at ({r},{c})"
+                    );
+                }
+                col += count;
+                dark = !dark;
+            }
+            assert_eq!(col, size, "row {r} length");
+        }
     }
 
     #[test]

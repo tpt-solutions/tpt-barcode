@@ -112,16 +112,16 @@ fn qr_survives_random_bit_errors_within_ec_capacity() {
         let qr = tpt_barcode::qr::encode(payload, EcLevel::H).unwrap();
         let mut corrupted = qr.matrix.clone();
         let mut flipped = 0usize;
-        for idx in 0..corrupted.len() {
+        for module in corrupted.iter_mut() {
             if rng.byte() % 97 == 0 && flipped < 12 {
-                corrupted[idx] ^= 1;
+                *module ^= 1;
                 flipped += 1;
             }
         }
         let _ = case;
-        match tpt_barcode::two_d::qr::decode_grid(&corrupted, qr.size) {
-            Ok(decoded) => assert_eq!(decoded, payload, "case {case}"),
-            Err(_) => {} // module noise beyond capacity is an acceptable reject
+        // module noise beyond capacity is an acceptable reject
+        if let Ok(decoded) = tpt_barcode::two_d::qr::decode_grid(&corrupted, qr.size) {
+            assert_eq!(decoded, payload, "case {case}");
         }
     }
 }

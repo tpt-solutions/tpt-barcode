@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3-bit-error correction, unmasking, codeword extraction, block
   de-interleaving, Reed-Solomon error correction, and mode-stream parsing
   (numeric / alphanumeric / byte / kanji / ECI / structured-append).
+- GS1 Application Identifier parsing (`two_d::gs1::parse` /
+  `parse_text`) for FNC1-carrying QR Code and Data Matrix symbols.
 - Data Matrix (ECC 200) generation and decoding: ASCII encodation with digit
   pairing and upper shift, Reed-Solomon ECC over GF(256)/0x12D, ISO/IEC 16022
   Annex M symbol placement (utah shapes + corner patterns), solid-L finder and

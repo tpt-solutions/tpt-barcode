@@ -147,6 +147,6 @@ mod tests {
 
     #[test]
     fn invalid_char_rejected() {
-        assert!(encode(&[b'|']).is_err());
+        assert!(encode(b"|").is_err());
     }
 }

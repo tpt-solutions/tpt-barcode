@@ -174,8 +174,10 @@ current tree. Ordered by risk.
 - [x] **[PERF]** PDF417 codeword reverse-lookup is a linear scan over 929
       entries per codeword (`pdf417/decode.rs::lookup`). Build a sorted
       (mask → codeword) index or perfect-hash per cluster once per symbol.
-- [~] **[DEBT]** QR Kanji mode is a dead path (documented as reserved;
-      Shift-JIS encode still unimplemented): `Mode::detect` never returns
+- [x] **[DEBT]** QR Kanji mode: `encode_sjis` now encodes Shift-JIS
+      payloads with Kanji segments (base-192 13-bit packing) interleaved
+      with byte segments, and the decoder uses the correct base-192 inverse
+      (the previous naive-shift decode mis-mapped the second SJIS range): `Mode::detect` never returns
       it and `encode_byte` is used in its place. Either implement Shift-JIS
       Kanji encoding (with detection) or remove it from the public `Mode`.
 - [x] **[GAP]** DataMatrix: encoder is ASCII-encodation only (no C40/Text/
@@ -213,9 +215,9 @@ current tree. Ordered by risk.
       main entry points (`qr::encode`, `pdf417::encode`, `scan`).
       (Done 2026-09-16: support matrix + CLI/examples sections; scanner
       doc examples use `no_run`.)
-- [ ] **Templates**: an `templates/embedded` sketch (no_std + alloc frame-
-      buffer render) and a `templates/web` WASM demo page (encode + camera
-      scan) — the two most requested integration surfaces.
+- [~] **Templates**: an `templates/embedded` sketch (no_std + alloc frame-
+      buffer render) exists; the `templates/web` WASM demo page (encode +
+      camera scan) is still open — the two most requested integration surfaces.
 
 ## Phase 9 — Hardening & Automation
 
@@ -248,16 +250,21 @@ current tree. Ordered by risk.
       zero-cost story for embedded and static sites. Requires const-fn
       versions of the QR pipeline (feasible: everything except the mask
       penalty loop is const-friendly; penalty loop is const too).
-- [ ] **GS1 support**: FNC1 first/second position in QR and DataMatrix
-      encoding, application-identifier parsing into typed key-value output,
-      and GS1-safe payload validation. Enterprise adoption hinge.
+- [x] **GS1 support**: `qr::encode_gs1` (FNC1 first position + byte
+      segment) and `datamatrix::encode_gs1` (FNC1 codeword 232 after the
+      SLD), plus `two_d::gs1` — a length-aware Application Identifier
+      parser (`parse` / `parse_text` / `AiElement`) that splits a decoded
+      element string into typed `(AI, value)` pairs using the GS1
+      fixed-length / FNC1-terminated rules.
 - [x] **Multi-symbol scanning + structured results**: `ScanResult` gains
       symbology-specific metadata (QR version/mask/EC, ECI; DataMatrix size;
       PDF417 rows/EC level) and `execute()` returns all distinct symbols.
-- [~] **NEON binarization path** (aarch64) mirroring the SSE2 threshold
-      stage; `target_feature` runtime detection already in place.
-- [ ] **Bilinear grid sampling** option in `homography::sample_grid` for
-      low-resolution images (currently nearest-neighbour only).
+- [x] **NEON binarization path** (aarch64) mirroring the SSE2 threshold
+      stage; compiles via `cargo check --target aarch64-unknown-none-softfloat
+      -Z build-std=core,alloc` (nightly); runtime-gated, hardware validation
+      pending access to an aarch64 machine.
+- [x] **Bilinear grid sampling** — `homography::sample_grid_bilinear`
+      added alongside the nearest-neighbour path.
 - [ ] **Language bindings**: WASM/npm package with a browser demo page and
       (optionally) pyo3 bindings — both are proven adoption multipliers for
       barcode libraries.

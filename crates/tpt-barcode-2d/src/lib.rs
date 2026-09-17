@@ -16,6 +16,11 @@ extern crate alloc;
 extern crate std;
 
 pub mod datamatrix;
+pub mod gs1;
+
+/// GS1 Application Identifier parsing for FNC1-carrying symbols.
+#[cfg(feature = "alloc")]
+pub use gs1::{parse as parse_gs1_ais, parse_text as parse_gs1_ais_text, AiElement};
 pub mod pdf417;
 pub mod qr;
 

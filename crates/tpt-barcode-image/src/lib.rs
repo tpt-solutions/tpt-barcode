@@ -22,3 +22,4 @@ pub mod binarize;
 pub mod edge;
 pub mod finder;
 pub mod homography;
+mod neon;

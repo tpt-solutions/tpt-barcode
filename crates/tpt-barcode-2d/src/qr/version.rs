@@ -47,7 +47,7 @@ pub const fn modules(version: u8) -> usize {
 
 /// Alignment pattern center positions for versions 2–40.
 /// Index 0 = version 1 (empty), index n = version n+1.
-pub fn alignment_positions(version: u8) -> &'static [u8] {
+pub const fn alignment_positions(version: u8) -> &'static [u8] {
     // From ISO 18004:2015 Annex E
     match version {
         1 => &[],

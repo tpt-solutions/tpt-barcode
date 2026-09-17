@@ -232,7 +232,7 @@ mod tests {
         // Should produce a non-empty module sequence
         assert!(!bc.modules.is_empty());
         // All widths should be 1–4
-        assert!(bc.modules.iter().all(|&w| w >= 1 && w <= 4));
+        assert!(bc.modules.iter().all(|&w| (1..=4).contains(&w)));
     }
 
     #[test]

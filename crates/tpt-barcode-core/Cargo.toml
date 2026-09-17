@@ -6,10 +6,11 @@ edition.workspace     = true
 rust-version.workspace = true
 authors.workspace     = true
 license.workspace     = true
+keywords   = ["barcode", "reed-solomon", "galois-field", "error-correction", "no-std"]
+categories  = ["encoding", "no-std", "algorithms"]
 repository.workspace  = true
 homepage.workspace    = true
-keywords.workspace    = true
-categories.workspace  = true
+
 
 [features]
 default = ["std"]

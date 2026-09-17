@@ -1,0 +1,8 @@
+[package]
+name = "embedded-qr-template"
+version = "0.1.0"
+edition = "2021"
+
+# Not a workspace member — copy into your firmware project.
+[dependencies]
+tpt-barcode = { path = "../../crates/tpt-barcode", default-features = false, features = ["alloc", "2d"] }

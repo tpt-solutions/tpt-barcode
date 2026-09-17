@@ -6,10 +6,11 @@ edition.workspace     = true
 rust-version.workspace = true
 authors.workspace     = true
 license.workspace     = true
+keywords   = ["barcode", "code128", "ean13", "upca", "code39"]
+categories  = ["encoding", "no-std"]
 repository.workspace  = true
 homepage.workspace    = true
-keywords.workspace    = true
-categories.workspace  = true
+
 
 [features]
 default = ["std"]

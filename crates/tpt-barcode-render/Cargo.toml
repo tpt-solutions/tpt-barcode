@@ -6,10 +6,11 @@ edition.workspace     = true
 rust-version.workspace = true
 authors.workspace     = true
 license.workspace     = true
+keywords   = ["barcode", "svg", "png", "terminal", "ansi"]
+categories  = ["encoding", "graphics", "multimedia::images"]
 repository.workspace  = true
 homepage.workspace    = true
-keywords.workspace    = true
-categories.workspace  = true
+
 
 [features]
 default = ["std"]

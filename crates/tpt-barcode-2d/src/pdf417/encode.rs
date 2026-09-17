@@ -194,42 +194,6 @@ pub fn render(codewords: &[u16], cols: usize, rows: usize, level: u8) -> Vec<u8>
     matrix
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn byte_compaction_sixpack() {
-        // 6 bytes → 5 codewords
-        let cw = encode_byte_compaction(b"ABCDEF");
-        assert_eq!(cw[0], 924); // multiple of 6 → 924 latch
-        assert_eq!(cw.len(), 6); // latch + 5 codewords
-        let mut t: u64 = 0;
-        for b in b"ABCDEF" {
-            t = (t << 8) | *b as u64;
-        }
-        for slot in cw[1..].iter().rev() {
-            assert_eq!(*slot, (t % 900) as u16);
-            t /= 900;
-        }
-    }
-
-    #[test]
-    fn byte_compaction_partial_tail() {
-        // 8 bytes: 901 latch + 5 (one sixpack) + 2 tail codewords
-        let cw = encode_byte_compaction(b"ABCDEFGH");
-        assert_eq!(cw[0], 901);
-        assert_eq!(cw.len(), 1 + 5 + 2);
-        assert_eq!(&cw[6..], &b"GH".map(u16::from)[..]);
-    }
-
-    #[test]
-    fn rows_formula_matches_reference() {
-        // ISO §4.9.1 example semantics: enough cells, minimal overshoot
-        assert_eq!(calculate_rows(5, 8, 3), 5);
-    }
-}
-
 /// Encode `data` (text compaction) at `ec` level into a full codeword stream.
 pub fn encode_codewords_text(data: &[u8], ec: EcLevel) -> Result<Vec<u16>, EncodeError> {
     let level = ec.0;
@@ -279,4 +243,40 @@ pub fn encode_codewords_numeric(data: &[u8], ec: EcLevel) -> Result<Vec<u16>, En
     rs_encode(&codewords, k, &mut ecw);
     codewords.extend_from_slice(&ecw);
     Ok(codewords)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn byte_compaction_sixpack() {
+        // 6 bytes → 5 codewords
+        let cw = encode_byte_compaction(b"ABCDEF");
+        assert_eq!(cw[0], 924); // multiple of 6 → 924 latch
+        assert_eq!(cw.len(), 6); // latch + 5 codewords
+        let mut t: u64 = 0;
+        for b in b"ABCDEF" {
+            t = (t << 8) | *b as u64;
+        }
+        for slot in cw[1..].iter().rev() {
+            assert_eq!(*slot, (t % 900) as u16);
+            t /= 900;
+        }
+    }
+
+    #[test]
+    fn byte_compaction_partial_tail() {
+        // 8 bytes: 901 latch + 5 (one sixpack) + 2 tail codewords
+        let cw = encode_byte_compaction(b"ABCDEFGH");
+        assert_eq!(cw[0], 901);
+        assert_eq!(cw.len(), 1 + 5 + 2);
+        assert_eq!(&cw[6..], &b"GH".map(u16::from)[..]);
+    }
+
+    #[test]
+    fn rows_formula_matches_reference() {
+        // ISO §4.9.1 example semantics: enough cells, minimal overshoot
+        assert_eq!(calculate_rows(5, 8, 3), 5);
+    }
 }

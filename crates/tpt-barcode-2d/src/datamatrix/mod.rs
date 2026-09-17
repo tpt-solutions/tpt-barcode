@@ -122,9 +122,27 @@ pub fn encode(data: &[u8]) -> Result<DataMatrix, EncodeError> {
     let encoded = encode::encode_data(data);
     let size = DmSize::select(encoded.len()).ok_or(EncodeError::DataTooLong)?;
     let codewords = encode::with_ec(encode::pad(encoded, size.data_codewords()), size);
-
     let mut matrix = alloc::vec![0u8; size.modules() * size.modules()];
     encode::build_symbol(&codewords, size, &mut matrix);
+    Ok(DataMatrix {
+        matrix,
+        size: size.modules(),
+    })
+}
+
+/// Encode `data` as a GS1 Data Matrix: the FNC1 codeword (232) is emitted
+/// as the first data codeword, marking the payload as GS1-formatted
+/// (Application Identifier strings).
+#[cfg(feature = "alloc")]
+pub fn encode_gs1(data: &[u8]) -> Result<DataMatrix, EncodeError> {
+    let encoded = encode::encode_data(data);
+    let size = DmSize::select(encoded.len() + 1).ok_or(EncodeError::DataTooLong)?;
+    let codewords = encode::with_ec(encode::pad(encoded, size.data_codewords()), size);
+    let mut with_fnc1 = codewords;
+    with_fnc1[0] = 232; // FNC1 (first position) — codeword after the SLD
+
+    let mut matrix = alloc::vec![0u8; size.modules() * size.modules()];
+    encode::build_symbol(&with_fnc1, size, &mut matrix);
 
     Ok(DataMatrix {
         matrix,
@@ -252,6 +270,17 @@ mod tests {
         // Break the solid L-finder
         grid[size * size - 1] = 0;
         assert_eq!(decode(&grid, size), Err(DecodeError::InvalidFormat));
+    }
+
+    #[test]
+    fn gs1_round_trip() {
+        // FNC1 (232) as first data codeword; payload decodes without the
+        // FNC1 marker itself
+        let payload = b"0109501101020917";
+        let dm = encode_gs1(payload).unwrap();
+        let decoded = decode(&dm.matrix, dm.size).unwrap();
+        // the decoder returns the raw payload; GS1 AIs remain in the text
+        assert_eq!(decoded, payload);
     }
 
     #[test]

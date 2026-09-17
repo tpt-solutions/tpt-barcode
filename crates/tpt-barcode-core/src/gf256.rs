@@ -231,8 +231,8 @@ mod tests {
     fn pow_known() {
         // α^8 = α^4 + α^3 + α^2 + 1 = 0x1D in GF(0x11D)
         // But EXP[8] was built by the table; just verify pow matches EXP
-        for n in 0usize..255 {
-            assert_eq!(pow(2, n), EXP[n]);
+        for (n, &exp) in EXP.iter().enumerate() {
+            assert_eq!(pow(2, n), exp);
         }
     }
 
